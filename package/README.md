@@ -237,39 +237,6 @@ state, and a plugin's own `installations` rows) across every repository
 table the database holds. Schedule it periodically (e.g. via `aux4 cron`),
 same as aux4/slackbot's `clean`.
 
-## Configuration
-
-```yaml
-config:
-  api:
-    "GET /{channel}/{bot}/webhook":
-      command: aux4 bot verify --configFile config.yaml --config bot
-      public: true
-    "POST /{channel}/{bot}/webhook":
-      command: aux4 bot ingest --configFile config.yaml --config bot
-      public: true
-  bot:
-    channels: ["echo"]
-    db: "./.bot/state.db"
-    tmpDir: "./.bot/tmp"
-    queueName: "bot.inbound"
-    queueUrl: "http://localhost:8430"
-    dedupeTtl: 300
-    defaults:
-      threadTtl: 86400
-      replyTtl: 3600
-      brainTimeout: 120000
-      brainRetries: 2
-      historyMaxTurns: 20
-      failureMessage: "Sorry — I hit an error handling that request."
-    bots:
-      support:
-        channel: echo
-        secret: ${ECHO_SIGNING_SECRET}
-        outbox: "./.bot/echo-outbox.ndjson"
-        command: "cat"
-```
-
 ## License
 
 Apache-2.0

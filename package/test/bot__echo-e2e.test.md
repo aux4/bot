@@ -158,3 +158,110 @@ echo "ack:$HTTP lines:$(wc -l < test-outbox.ndjson | tr -d ' ')"
 ```expect
 ack:200 lines:2
 ```
+
+## POST ingest — enqueue failure releases the claim for retry
+
+Simulates "the queue is not running" by pointing `bot.queueUrl` at a port
+nothing is listening on, so `aux4 queue send` fails inside ingest's enqueue
+step after the event has already been claimed.
+
+### queue unreachable: enqueue fails, the claim is released, and the ack is 5xx
+
+```file:config.yaml
+config:
+  port: 18740
+  server:
+    timeout: 5000
+  api:
+    "GET /{channel}/{bot}/webhook":
+      command: aux4 bot verify --configFile config.yaml --config bot
+      public: true
+    "POST /{channel}/{bot}/webhook":
+      command: aux4 bot ingest --configFile config.yaml --config bot
+      public: true
+  bot:
+    channels: ["echo"]
+    db: "test-bot-state.db"
+    tmpDir: "test-bot-tmp"
+    queueName: "bot.e2e.test"
+    queueUrl: "http://localhost:18799"
+    dedupeTtl: 300
+    defaults:
+      threadTtl: 3600
+      replyTtl: 3600
+      brainTimeout: 5000
+      brainRetries: 1
+    bots:
+      support:
+        channel: echo
+        secret: testsecret
+        outbox: "test-outbox.ndjson"
+        command: "echo"
+```
+
+```execute
+node -e '
+const c = require("crypto");
+const body = JSON.stringify({ events: [{ id: "evt-e2e-enqueue-fail", chatId: "chat-2", text: "should retry" }] });
+const sig = c.createHmac("sha256", "testsecret").update(body, "utf8").digest("hex");
+require("fs").writeFileSync("e2e-body2.json", body);
+console.log(sig);
+' > e2e-sig2.txt
+curl -s -o /dev/null -w "%{http_code}" -X POST "http://localhost:18740/api/echo/support/webhook" -H "Content-Type: application/json" -H "x-echo-signature: $(cat e2e-sig2.txt)" --data-binary @e2e-body2.json
+```
+
+```expect
+502
+```
+
+### redelivery, once the queue is reachable again, is processed — not treated as a duplicate
+
+```file:config.yaml
+config:
+  port: 18740
+  server:
+    timeout: 5000
+  api:
+    "GET /{channel}/{bot}/webhook":
+      command: aux4 bot verify --configFile config.yaml --config bot
+      public: true
+    "POST /{channel}/{bot}/webhook":
+      command: aux4 bot ingest --configFile config.yaml --config bot
+      public: true
+  bot:
+    channels: ["echo"]
+    db: "test-bot-state.db"
+    tmpDir: "test-bot-tmp"
+    queueName: "bot.e2e.test"
+    queueUrl: "http://localhost:18741"
+    dedupeTtl: 300
+    defaults:
+      threadTtl: 3600
+      replyTtl: 3600
+      brainTimeout: 5000
+      brainRetries: 1
+    bots:
+      support:
+        channel: echo
+        secret: testsecret
+        outbox: "test-outbox.ndjson"
+        command: "echo"
+```
+
+```execute
+node -e '
+const c = require("crypto");
+const body = JSON.stringify({ events: [{ id: "evt-e2e-enqueue-fail", chatId: "chat-2", text: "should retry" }] });
+const sig = c.createHmac("sha256", "testsecret").update(body, "utf8").digest("hex");
+require("fs").writeFileSync("e2e-body2.json", body);
+console.log(sig);
+' > e2e-sig2.txt
+curl -s -w "\nHTTP:%{http_code}\n" -X POST "http://localhost:18740/api/echo/support/webhook" -H "Content-Type: application/json" -H "x-echo-signature: $(cat e2e-sig2.txt)" --data-binary @e2e-body2.json
+sleep 1.5
+cat test-outbox.ndjson
+rm -f e2e-sig2.txt e2e-body2.json
+```
+
+```expect:partial
+HTTP:200**{"type":"typing","chatId":"chat-2"}**{"type":"message","chatId":"chat-2","text":"should retry*
+```
