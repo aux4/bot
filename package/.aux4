@@ -1,0 +1,180 @@
+{
+  "scope": "aux4",
+  "name": "bot",
+  "version": "0.1.0",
+  "description": "Generic multi-channel chatbot core: webhook -> claim-dedupe -> queue -> worker -> plugin send",
+  "dependencies": [
+    "aux4/queue",
+    "aux4/repository"
+  ],
+  "system": [
+    ["test:node --version", "brew:node"]
+  ],
+  "profiles": [
+    {
+      "name": "main",
+      "commands": [
+        {
+          "name": "bot",
+          "execute": [
+            "profile:bot"
+          ],
+          "help": {
+            "text": "Generic multi-channel chatbot core"
+          }
+        }
+      ]
+    },
+    {
+      "name": "bot",
+      "commands": [
+        {
+          "name": "verify",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "stdin:node ${packageDir}/lib/bot.mjs verify values(channels, bots, defaults)"
+          ],
+          "help": {
+            "text": "aux4/api route handler for GET /{channel}/{bot}/webhook (platform verification handshake)",
+            "variables": [
+              { "name": "channels", "text": "Allowlisted channel names (JSON array)", "default": "[]" },
+              { "name": "bots", "text": "Map of botId -> per-bot config (JSON object)", "default": "{}" },
+              { "name": "defaults", "text": "Shared defaults merged under every bot (JSON object)", "default": "{}" }
+            ]
+          }
+        },
+        {
+          "name": "ingest",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "stdin:node ${packageDir}/lib/bot.mjs ingest values(channels, bots, defaults, db, queueName, queueUrl, dedupeTtl)"
+          ],
+          "help": {
+            "text": "aux4/api route handler for POST /{channel}/{bot}/webhook (verify -> claim dedupe -> enqueue -> ack)",
+            "variables": [
+              { "name": "channels", "text": "Allowlisted channel names (JSON array)", "default": "[]" },
+              { "name": "bots", "text": "Map of botId -> per-bot config (JSON object)", "default": "{}" },
+              { "name": "defaults", "text": "Shared defaults merged under every bot (JSON object)", "default": "{}" },
+              { "name": "db", "text": "Repository database (local sqlite path or libsql:// URL)", "default": ".bot/state.db" },
+              { "name": "queueName", "text": "aux4/queue dispatch queue name", "default": "bot.inbound" },
+              { "name": "queueUrl", "text": "aux4/queue server URL (only the port is used)", "default": "http://localhost:8430" },
+              { "name": "dedupeTtl", "text": "Event dedupe window in seconds, when a plugin event has no ttl of its own", "default": "300" }
+            ]
+          }
+        },
+        {
+          "name": "worker",
+          "execute": [
+            "node ${packageDir}/lib/bot.mjs worker values(channels, bots, defaults, db, tmpDir, queueName, queueUrl)"
+          ],
+          "help": {
+            "text": "Long-running queue consumer: typing -> brain -> plugin format+send, with retry and a reply-once guard",
+            "variables": [
+              { "name": "channels", "text": "Allowlisted channel names (JSON array)", "default": "[]" },
+              { "name": "bots", "text": "Map of botId -> per-bot config (JSON object)", "default": "{}" },
+              { "name": "defaults", "text": "Shared defaults merged under every bot (JSON object)", "default": "{}" },
+              { "name": "db", "text": "Repository database (local sqlite path or libsql:// URL)", "default": ".bot/state.db" },
+              { "name": "tmpDir", "text": "Working directory for downloaded attachments", "default": ".bot/tmp" },
+              { "name": "queueName", "text": "aux4/queue dispatch queue name", "default": "bot.inbound" },
+              { "name": "queueUrl", "text": "aux4/queue server URL (only the port is used)", "default": "http://localhost:8430" }
+            ]
+          }
+        },
+        {
+          "name": "clean",
+          "execute": [
+            "node ${packageDir}/lib/bot.mjs clean values(db)"
+          ],
+          "help": {
+            "text": "Sweep expired records (ttl in the past) from every repository table aux4/bot manages",
+            "variables": [
+              { "name": "db", "text": "Repository database (local sqlite path or libsql:// URL)", "default": ".bot/state.db" }
+            ]
+          }
+        },
+        {
+          "name": "echo",
+          "execute": [
+            "profile:bot:echo"
+          ],
+          "help": {
+            "text": "The 'echo' channel plugin — a reference implementation and in-repo test fixture (not a real platform)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "bot:echo",
+      "commands": [
+        {
+          "name": "verify",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "stdin:node ${packageDir}/lib/bot.mjs echo-verify"
+          ],
+          "help": {
+            "text": "echo plugin: verify an inbound request (HMAC-SHA256 over the raw body, or echo a GET handshake challenge)"
+          }
+        },
+        {
+          "name": "ingest-parse",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "stdin:node ${packageDir}/lib/bot.mjs echo-ingest-parse"
+          ],
+          "help": {
+            "text": "echo plugin: parse a raw webhook body into normalized core events"
+          }
+        },
+        {
+          "name": "typing",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "stdin:node ${packageDir}/lib/bot.mjs echo-typing"
+          ],
+          "help": {
+            "text": "echo plugin: signal that a reply is being worked on"
+          }
+        },
+        {
+          "name": "download",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "stdin:node ${packageDir}/lib/bot.mjs echo-download"
+          ],
+          "help": {
+            "text": "echo plugin: materialize an attached file onto local disk"
+          }
+        },
+        {
+          "name": "format",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "stdin:node ${packageDir}/lib/bot.mjs echo-format"
+          ],
+          "help": {
+            "text": "echo plugin: convert the brain's markdown answer into the channel's native format"
+          }
+        },
+        {
+          "name": "send",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "stdin:node ${packageDir}/lib/bot.mjs echo-send"
+          ],
+          "help": {
+            "text": "echo plugin: deliver the formatted reply"
+          }
+        }
+      ]
+    }
+  ]
+}

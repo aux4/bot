@@ -1,0 +1,34 @@
+{
+  "name": "@aux4/bot",
+  "version": "0.1.0",
+  "description": "Generic multi-channel chatbot core for aux4 (webhook -> claim-dedupe -> queue -> worker -> plugin send)",
+  "type": "module",
+  "preferGlobal": true,
+  "scripts": {
+    "test": "node --test",
+    "build": "rollup -c"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/aux4/bot.git"
+  },
+  "keywords": [
+    "aux4",
+    "cli",
+    "bot",
+    "chatbot",
+    "webhook"
+  ],
+  "author": "aux4 LLC",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/aux4/bot/issues"
+  },
+  "homepage": "https://github.com/aux4/bot#readme",
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.6",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "rollup": "^4.46.3"
+  }
+}
