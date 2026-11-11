@@ -1,7 +1,7 @@
 {
   "scope": "aux4",
   "name": "bot",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Generic multi-channel chatbot core: webhook -> claim-dedupe -> queue -> worker -> plugin send",
   "dependencies": [
     "aux4/queue",
@@ -9,7 +9,10 @@
     "aux4/repository@>=1.3.4"
   ],
   "system": [
-    ["test:node --version", "brew:node"]
+    [
+      "test:node --version",
+      "brew:node"
+    ]
   ],
   "profiles": [
     {
@@ -39,9 +42,21 @@
           "help": {
             "text": "aux4/api route handler for GET /{channel}/{bot}/webhook (platform verification handshake)",
             "variables": [
-              { "name": "channels", "text": "Allowlisted channel names (JSON array)", "default": "[]" },
-              { "name": "bots", "text": "Map of botId -> per-bot config (JSON object)", "default": "{}" },
-              { "name": "defaults", "text": "Shared defaults merged under every bot (JSON object)", "default": "{}" }
+              {
+                "name": "channels",
+                "text": "Allowlisted channel names (JSON array)",
+                "default": "[]"
+              },
+              {
+                "name": "bots",
+                "text": "Map of botId -> per-bot config (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "defaults",
+                "text": "Shared defaults merged under every bot (JSON object)",
+                "default": "{}"
+              }
             ]
           }
         },
@@ -55,13 +70,41 @@
           "help": {
             "text": "aux4/api route handler for POST /{channel}/{bot}/webhook (verify -> claim dedupe -> enqueue -> ack)",
             "variables": [
-              { "name": "channels", "text": "Allowlisted channel names (JSON array)", "default": "[]" },
-              { "name": "bots", "text": "Map of botId -> per-bot config (JSON object)", "default": "{}" },
-              { "name": "defaults", "text": "Shared defaults merged under every bot (JSON object)", "default": "{}" },
-              { "name": "db", "text": "Repository database (local sqlite path or libsql:// URL)", "default": ".bot/state.db" },
-              { "name": "queueName", "text": "aux4/queue dispatch queue name", "default": "bot.inbound" },
-              { "name": "queueUrl", "text": "aux4/queue server URL (only the port is used)", "default": "http://localhost:8430" },
-              { "name": "dedupeTtl", "text": "Event dedupe window in seconds, when a plugin event has no ttl of its own", "default": "300" }
+              {
+                "name": "channels",
+                "text": "Allowlisted channel names (JSON array)",
+                "default": "[]"
+              },
+              {
+                "name": "bots",
+                "text": "Map of botId -> per-bot config (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "defaults",
+                "text": "Shared defaults merged under every bot (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "db",
+                "text": "Repository database (local sqlite path or libsql:// URL)",
+                "default": ".bot/state.db"
+              },
+              {
+                "name": "queueName",
+                "text": "aux4/queue dispatch queue name",
+                "default": "bot.inbound"
+              },
+              {
+                "name": "queueUrl",
+                "text": "aux4/queue server URL (only the port is used)",
+                "default": "http://localhost:8430"
+              },
+              {
+                "name": "dedupeTtl",
+                "text": "Event dedupe window in seconds, when a plugin event has no ttl of its own",
+                "default": "300"
+              }
             ]
           }
         },
@@ -73,13 +116,41 @@
           "help": {
             "text": "Long-running queue consumer: typing -> brain -> plugin format+send, with retry and a reply-once guard",
             "variables": [
-              { "name": "channels", "text": "Allowlisted channel names (JSON array)", "default": "[]" },
-              { "name": "bots", "text": "Map of botId -> per-bot config (JSON object)", "default": "{}" },
-              { "name": "defaults", "text": "Shared defaults merged under every bot (JSON object)", "default": "{}" },
-              { "name": "db", "text": "Repository database (local sqlite path or libsql:// URL)", "default": ".bot/state.db" },
-              { "name": "tmpDir", "text": "Working directory for downloaded attachments", "default": ".bot/tmp" },
-              { "name": "queueName", "text": "aux4/queue dispatch queue name", "default": "bot.inbound" },
-              { "name": "queueUrl", "text": "aux4/queue server URL (only the port is used)", "default": "http://localhost:8430" }
+              {
+                "name": "channels",
+                "text": "Allowlisted channel names (JSON array)",
+                "default": "[]"
+              },
+              {
+                "name": "bots",
+                "text": "Map of botId -> per-bot config (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "defaults",
+                "text": "Shared defaults merged under every bot (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "db",
+                "text": "Repository database (local sqlite path or libsql:// URL)",
+                "default": ".bot/state.db"
+              },
+              {
+                "name": "tmpDir",
+                "text": "Working directory for downloaded attachments",
+                "default": ".bot/tmp"
+              },
+              {
+                "name": "queueName",
+                "text": "aux4/queue dispatch queue name",
+                "default": "bot.inbound"
+              },
+              {
+                "name": "queueUrl",
+                "text": "aux4/queue server URL (only the port is used)",
+                "default": "http://localhost:8430"
+              }
             ]
           }
         },
@@ -91,7 +162,11 @@
           "help": {
             "text": "Sweep expired records (ttl in the past) from every repository table aux4/bot manages",
             "variables": [
-              { "name": "db", "text": "Repository database (local sqlite path or libsql:// URL)", "default": ".bot/state.db" }
+              {
+                "name": "db",
+                "text": "Repository database (local sqlite path or libsql:// URL)",
+                "default": ".bot/state.db"
+              }
             ]
           }
         },
