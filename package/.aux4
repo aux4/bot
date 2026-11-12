@@ -1,10 +1,10 @@
 {
   "scope": "aux4",
   "name": "bot",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Generic multi-channel chatbot core: webhook -> claim-dedupe -> durable work queue -> lease/ack/nack -> plugin send",
   "dependencies": [
-    "aux4/queue@>=0.2.2",
+    "aux4/queue@>=0.2.3",
     "aux4/api@>=2.1.12",
     "aux4/repository@>=1.3.4"
   ],
@@ -65,7 +65,6 @@
           "private": true,
           "noHooks": true,
           "execute": [
-            "if [ \"${queue.command}\" = \"aux4 queue\" ] || [ \"${queue.command}\" = \"aux4 queue-sqs\" ]; then true; else echo \"Error: queue.command must be 'aux4 queue' or 'aux4 queue-sqs'\" >&2 && exit 1; fi",
             "json:stdin:node ${packageDir}/lib/bot.mjs ingest-prepare values(channels, bots, defaults, db, dedupeTtl)",
             "set:toSend=${response.toSend}",
             "set:replyStatus=${response.statusCode}",
@@ -102,8 +101,8 @@
               },
               {
                 "name": "queue",
-                "text": "Work-queue config, passed straight through to queue.command: {command, name, storage, db, visibility, maxAttempts, port, token}. command defaults to 'aux4 queue' and must be an allowlisted queue CLI (aux4 queue | aux4 queue-sqs) implementing the same create/send/lease/ack/nack/dlq contract; storage is memory|repository (ignored by a command that has no such concept, e.g. aux4 queue-sqs); db/port/token are only used by the matching storage",
-                "default": "{\"command\":\"aux4 queue\",\"name\":\"bot-inbox\",\"storage\":\"memory\",\"db\":\".bot/queue.db\",\"visibility\":\"30\",\"maxAttempts\":\"5\",\"port\":\"8420\",\"token\":\"\"}"
+                "text": "Work-queue config: {command, name, storage, db, visibility, maxAttempts, port, token}. command is a validated provider key dispatched via 'aux4 bot provider <key> ...' (see that command) — 'queue' (default, aux4/queue) or 'queue-sqs' (aux4/queue-sqs, once BOT-017 lands); an unlisted key fails closed (Command not found), never shells out to an arbitrary string. storage is memory|repository (ignored by a provider that has no such concept); db/port/token are only used by the matching storage",
+                "default": "{\"command\":\"queue\",\"name\":\"bot-inbox\",\"storage\":\"memory\",\"db\":\".bot/queue.db\",\"visibility\":\"30\",\"maxAttempts\":\"5\",\"port\":\"8420\",\"token\":\"\"}"
               },
               {
                 "name": "toSend",
@@ -126,10 +125,10 @@
         {
           "name": "work",
           "execute": [
-            "stdin:if [ value(mode) = \"push\" ]; then aux4 bot work-push param(channels) param(bots) param(defaults) param(db) param(tmpDir); else aux4 bot work-pull param(channels) param(bots) param(defaults) param(db) param(tmpDir) param(queue); fi"
+            "stdin:aux4 bot value(mode) param(channels) param(bots) param(defaults) param(db) param(tmpDir) param(queue)"
           ],
           "help": {
-            "text": "Process exactly one message: --mode pull (default) self-leases the next eligible message from the queue and acks/nacks it; --mode push is the aux4/api route handler for POST /bot/work, processing the message given in the request body directly (no lease). Suitable for a single Lambda-style invocation",
+            "text": "Process exactly one message: dispatches via a validated dynamic subcommand (aux4 bot value(mode) ...) to 'pull' (default; self-leases the next eligible message from the queue and acks/nacks it) or 'push' (the aux4/api route handler for POST /bot/work, processing the message given in the request body directly, no lease). Suitable for a single Lambda-style invocation",
             "variables": [
               {
                 "name": "mode",
@@ -167,26 +166,23 @@
               },
               {
                 "name": "queue",
-                "text": "Work-queue config, passed straight through to queue.command (--mode pull only): {command, name, storage, db, visibility, maxAttempts, port, token}",
-                "default": "{\"command\":\"aux4 queue\",\"name\":\"bot-inbox\",\"storage\":\"memory\",\"db\":\".bot/queue.db\",\"visibility\":\"30\",\"maxAttempts\":\"5\",\"port\":\"8420\",\"token\":\"\"}"
+                "text": "Work-queue config (--mode pull only): {command, name, storage, db, visibility, maxAttempts, port, token}. command is a validated provider key ('queue' default) dispatched via 'aux4 bot provider' — see 'pull'",
+                "default": "{\"command\":\"queue\",\"name\":\"bot-inbox\",\"storage\":\"memory\",\"db\":\".bot/queue.db\",\"visibility\":\"30\",\"maxAttempts\":\"5\",\"port\":\"8420\",\"token\":\"\"}"
               }
             ]
           }
         },
         {
-          "name": "work-pull",
+          "name": "pull",
           "private": true,
           "noHooks": true,
           "execute": [
-            "if [ \"${queue.command}\" = \"aux4 queue\" ] || [ \"${queue.command}\" = \"aux4 queue-sqs\" ]; then true; else echo \"Error: queue.command must be 'aux4 queue' or 'aux4 queue-sqs'\" >&2 && exit 1; fi",
-            "nout:${queue.command} lease --name ${queue.name} --storage ${queue.storage} --db ${queue.db} --port ${queue.port} --token ${queue.token} --visibility ${queue.visibility} --maxAttempts ${queue.maxAttempts} || echo '[]'",
+            "nout:aux4 bot provider value(queue.command) lease param(queue.name:name) param(queue.storage:storage) param(queue.db:db) param(queue.port:port) param(queue.token:token) param(queue.visibility:visibility) param(queue.maxAttempts:maxAttempts); true",
             "json:node ${packageDir}/lib/bot.mjs lease-normalize values(response)",
-            "set:leaseId=${response.leaseId}",
-            "set:id=${response.id}",
-            "if [ -z \"${leaseId}\" ] && [ -z \"${id}\" ]; then echo '{\"leased\":false}'; else node ${packageDir}/lib/bot.mjs work-pull-process values(channels, bots, defaults, db, tmpDir, response) && ${queue.command} ack --name ${queue.name} --storage ${queue.storage} --db ${queue.db} --port ${queue.port} --token ${queue.token} param(leaseId) param(id) || ${queue.command} nack --name ${queue.name} --storage ${queue.storage} --db ${queue.db} --port ${queue.port} --token ${queue.token} --maxAttempts ${queue.maxAttempts} param(leaseId) param(id); fi"
+            "node ${packageDir}/lib/bot.mjs work-pull-process values(channels, bots, defaults, db, tmpDir, queue, response)"
           ],
           "help": {
-            "text": "Self-lease the next eligible message from the queue (one at a time per group), process it, and ack on success or nack on a brain failure",
+            "text": "Self-lease the next eligible message from the queue (one at a time per group) via the validated provider dispatch (see 'provider'), process it (renewing the lease while the brain runs), and ack on success or nack on a brain failure. The lease call is allowed to find nothing eligible (exits non-zero; the trailing ';true' is a plain unconditional sequence, not a conditional branch, so the pipeline can inspect the normalized {leased:false} result instead of the exit code) — everything past that point (the empty check, the ack/nack decision, the failureMessage reply) is decided in lib/worker.js, not here, since aux4's own templating cannot safely branch on a value that may be empty (see README)",
             "variables": [
               {
                 "name": "channels",
@@ -216,7 +212,7 @@
               {
                 "name": "queue",
                 "text": "aux4/queue config: {name, storage, db, visibility, maxAttempts, port, token}",
-                "default": "{\"command\":\"aux4 queue\",\"name\":\"bot-inbox\",\"storage\":\"memory\",\"db\":\".bot/queue.db\",\"visibility\":\"30\",\"maxAttempts\":\"5\",\"port\":\"8420\",\"token\":\"\"}"
+                "default": "{\"command\":\"queue\",\"name\":\"bot-inbox\",\"storage\":\"memory\",\"db\":\".bot/queue.db\",\"visibility\":\"30\",\"maxAttempts\":\"5\",\"port\":\"8420\",\"token\":\"\"}"
               },
               {
                 "name": "response",
@@ -227,14 +223,14 @@
           }
         },
         {
-          "name": "work-push",
+          "name": "push",
           "private": true,
           "noHooks": true,
           "execute": [
             "stdin:node ${packageDir}/lib/bot.mjs work-push values(channels, bots, defaults, db, tmpDir)"
           ],
           "help": {
-            "text": "aux4/api route handler for POST /bot/work: processes the {channel,botId,event} message in the request body directly, no lease/ack/nack. Used for push-style delivery (e.g. aux4/queue's pub/sub --webhook proxy)",
+            "text": "aux4/api route handler for POST /bot/work: processes the {channel,botId,event} message in the request body directly, no lease/ack/nack. Used for push-style delivery — a work queue's own retry-safe --webhook push (aux4/queue >=0.2.3), or any other system that can POST JSON",
             "variables": [
               {
                 "name": "channels",
@@ -305,7 +301,7 @@
               {
                 "name": "queue",
                 "text": "aux4/queue config: {name, storage, db, visibility, maxAttempts, port, token}",
-                "default": "{\"command\":\"aux4 queue\",\"name\":\"bot-inbox\",\"storage\":\"memory\",\"db\":\".bot/queue.db\",\"visibility\":\"30\",\"maxAttempts\":\"5\",\"port\":\"8420\",\"token\":\"\"}"
+                "default": "{\"command\":\"queue\",\"name\":\"bot-inbox\",\"storage\":\"memory\",\"db\":\".bot/queue.db\",\"visibility\":\"30\",\"maxAttempts\":\"5\",\"port\":\"8420\",\"token\":\"\"}"
               }
             ]
           }
@@ -333,6 +329,351 @@
           ],
           "help": {
             "text": "The 'echo' channel plugin — a reference implementation and in-repo test fixture (not a real platform)"
+          }
+        },
+        {
+          "name": "provider",
+          "private": true,
+          "execute": [
+            "profile:bot:provider"
+          ],
+          "help": {
+            "text": "Validated dynamic-subcommand dispatch to the configured queue backend (queue.command: 'queue' or 'queue-sqs') -- the ONE place that allowlist lives; an unlisted key fails closed (Command not found) instead of shelling out to an arbitrary string. Internal, called by 'ingest'/'pull' and from lib/provider.js, never directly"
+          }
+        }
+      ]
+    },
+    {
+      "name": "bot:provider",
+      "commands": [
+        {
+          "name": "queue",
+          "private": true,
+          "execute": [
+            "profile:bot:provider:queue"
+          ],
+          "help": {
+            "text": "queue backend dispatch target: aux4/queue (internal)"
+          }
+        },
+        {
+          "name": "queue-sqs",
+          "private": true,
+          "execute": [
+            "profile:bot:provider:queue-sqs"
+          ],
+          "help": {
+            "text": "queue backend dispatch target: aux4/queue-sqs, once BOT-017 lands (internal, not yet implemented)"
+          }
+        }
+      ]
+    },
+    {
+      "name": "bot:provider:queue",
+      "commands": [
+        {
+          "name": "send",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "stdin:aux4 queue send param(name) param(storage) param(db) param(port) param(token) param(group)"
+          ],
+          "help": {
+            "text": "aux4/queue: send a message (body piped via stdin)",
+            "variables": [
+              {
+                "name": "name",
+                "text": "Queue name",
+                "default": ""
+              },
+              {
+                "name": "storage",
+                "text": "Storage backend",
+                "default": "memory"
+              },
+              {
+                "name": "db",
+                "text": "Database path or libsql:// URL",
+                "default": ""
+              },
+              {
+                "name": "port",
+                "text": "Server port",
+                "default": ""
+              },
+              {
+                "name": "token",
+                "text": "Authentication token",
+                "default": ""
+              },
+              {
+                "name": "group",
+                "text": "Group key for one-at-a-time delivery",
+                "default": ""
+              }
+            ]
+          }
+        },
+        {
+          "name": "lease",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "aux4 queue lease param(name) param(storage) param(db) param(port) param(token) param(visibility) param(maxAttempts)"
+          ],
+          "help": {
+            "text": "aux4/queue: lease the next eligible message",
+            "variables": [
+              {
+                "name": "name",
+                "text": "Queue name",
+                "default": ""
+              },
+              {
+                "name": "storage",
+                "text": "Storage backend",
+                "default": "memory"
+              },
+              {
+                "name": "db",
+                "text": "Database path or libsql:// URL",
+                "default": ""
+              },
+              {
+                "name": "port",
+                "text": "Server port",
+                "default": ""
+              },
+              {
+                "name": "token",
+                "text": "Authentication token",
+                "default": ""
+              },
+              {
+                "name": "visibility",
+                "text": "Visibility timeout in seconds",
+                "default": "30"
+              },
+              {
+                "name": "maxAttempts",
+                "text": "The queue's maxAttempts",
+                "default": "0"
+              }
+            ]
+          }
+        },
+        {
+          "name": "renew",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "aux4 queue renew param(name) param(storage) param(db) param(port) param(token) param(leaseId) param(id) param(visibility)"
+          ],
+          "help": {
+            "text": "aux4/queue: extend a still-live lease (heartbeat)",
+            "variables": [
+              {
+                "name": "name",
+                "text": "Queue name",
+                "default": ""
+              },
+              {
+                "name": "storage",
+                "text": "Storage backend",
+                "default": "memory"
+              },
+              {
+                "name": "db",
+                "text": "Database path or libsql:// URL",
+                "default": ""
+              },
+              {
+                "name": "port",
+                "text": "Server port",
+                "default": ""
+              },
+              {
+                "name": "token",
+                "text": "Authentication token",
+                "default": ""
+              },
+              {
+                "name": "leaseId",
+                "text": "The leaseId returned by 'lease' (memory storage only)",
+                "default": ""
+              },
+              {
+                "name": "id",
+                "text": "The message id returned by 'lease' (repository storage only)",
+                "default": ""
+              },
+              {
+                "name": "visibility",
+                "text": "New visibility timeout in seconds, counted from now",
+                "default": ""
+              }
+            ]
+          }
+        },
+        {
+          "name": "ack",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "aux4 queue ack param(name) param(storage) param(db) param(port) param(token) param(leaseId) param(id)"
+          ],
+          "help": {
+            "text": "aux4/queue: acknowledge (complete) a leased message",
+            "variables": [
+              {
+                "name": "name",
+                "text": "Queue name",
+                "default": ""
+              },
+              {
+                "name": "storage",
+                "text": "Storage backend",
+                "default": "memory"
+              },
+              {
+                "name": "db",
+                "text": "Database path or libsql:// URL",
+                "default": ""
+              },
+              {
+                "name": "port",
+                "text": "Server port",
+                "default": ""
+              },
+              {
+                "name": "token",
+                "text": "Authentication token",
+                "default": ""
+              },
+              {
+                "name": "leaseId",
+                "text": "The leaseId returned by 'lease' (memory storage only)",
+                "default": ""
+              },
+              {
+                "name": "id",
+                "text": "The message id returned by 'lease' (repository storage only)",
+                "default": ""
+              }
+            ]
+          }
+        },
+        {
+          "name": "nack",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "aux4 queue nack param(name) param(storage) param(db) param(port) param(token) param(leaseId) param(id) param(maxAttempts)"
+          ],
+          "help": {
+            "text": "aux4/queue: release a leased message for immediate redelivery",
+            "variables": [
+              {
+                "name": "name",
+                "text": "Queue name",
+                "default": ""
+              },
+              {
+                "name": "storage",
+                "text": "Storage backend",
+                "default": "memory"
+              },
+              {
+                "name": "db",
+                "text": "Database path or libsql:// URL",
+                "default": ""
+              },
+              {
+                "name": "port",
+                "text": "Server port",
+                "default": ""
+              },
+              {
+                "name": "token",
+                "text": "Authentication token",
+                "default": ""
+              },
+              {
+                "name": "leaseId",
+                "text": "The leaseId returned by 'lease' (memory storage only)",
+                "default": ""
+              },
+              {
+                "name": "id",
+                "text": "The message id returned by 'lease' (repository storage only)",
+                "default": ""
+              },
+              {
+                "name": "maxAttempts",
+                "text": "The queue's maxAttempts",
+                "default": "0"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "bot:provider:queue-sqs",
+      "commands": [
+        {
+          "name": "send",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "echo 'Error: aux4/queue-sqs is not implemented yet (BOT-017) -- see package/.aux4 bot:provider:queue-sqs' >&2; exit 1"
+          ],
+          "help": {
+            "text": "placeholder -- not implemented yet (BOT-017)"
+          }
+        },
+        {
+          "name": "lease",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "echo 'Error: aux4/queue-sqs is not implemented yet (BOT-017) -- see package/.aux4 bot:provider:queue-sqs' >&2; exit 1"
+          ],
+          "help": {
+            "text": "placeholder -- not implemented yet (BOT-017)"
+          }
+        },
+        {
+          "name": "renew",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "echo 'Error: aux4/queue-sqs is not implemented yet (BOT-017) -- see package/.aux4 bot:provider:queue-sqs' >&2; exit 1"
+          ],
+          "help": {
+            "text": "placeholder -- not implemented yet (BOT-017)"
+          }
+        },
+        {
+          "name": "ack",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "echo 'Error: aux4/queue-sqs is not implemented yet (BOT-017) -- see package/.aux4 bot:provider:queue-sqs' >&2; exit 1"
+          ],
+          "help": {
+            "text": "placeholder -- not implemented yet (BOT-017)"
+          }
+        },
+        {
+          "name": "nack",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "echo 'Error: aux4/queue-sqs is not implemented yet (BOT-017) -- see package/.aux4 bot:provider:queue-sqs' >&2; exit 1"
+          ],
+          "help": {
+            "text": "placeholder -- not implemented yet (BOT-017)"
           }
         }
       ]

@@ -25,7 +25,7 @@ config:
     tmpDir: "crash-bot-tmp"
     dedupeTtl: 300
     queue:
-      command: "aux4 queue"
+      command: "queue"
       name: "bot_crash_test"
       storage: "repository"
       db: "crash-queue.db"

@@ -27,7 +27,7 @@ config:
     tmpDir: "test-bot-tmp"
     dedupeTtl: 300
     queue:
-      command: "aux4 queue"
+      command: "queue"
       name: "bot.e2e.test"
       storage: "memory"
       db: ".queue.db"
@@ -38,6 +38,7 @@ config:
     defaults:
       threadTtl: 3600
       replyTtl: 3600
+      failureMessage: "Sorry, I ran into a problem handling that."
     bots:
       support:
         channel: echo
@@ -53,6 +54,7 @@ rm -f test-bot-state.db test-outbox.ndjson queue.log api.log worker.log .queue.d
 rm -f .brain-marker-* e2e-sig*.txt e2e-body*.json
 rm -rf test-bot-tmp .tmp
 pkill -f "bot worker" 2>/dev/null
+pkill -f "bot work --mode pull" 2>/dev/null
 true
 ```
 
@@ -95,6 +97,11 @@ async function main() {
       process.stderr.write("boom-once\n");
       process.exit(1);
     }
+  }
+
+  if (text.startsWith("SLOW_")) {
+    const seconds = Number(text.split("_")[1]) || 5;
+    await new Promise(r => setTimeout(r, seconds * 1000));
   }
 
   console.log(text);
@@ -286,6 +293,74 @@ aux4 queue dlq --name bot.e2e.test --port 18741 | jq -r '.[0].body.event.text'
 FAIL_ALWAYS boom
 ```
 
+## failureMessage — a user-facing apology on the final failed attempt, before dead-lettering
+
+### the configured failureMessage is sent exactly once, right before the message is dead-lettered
+
+```timeout
+30000
+```
+
+```execute
+rm -f test-outbox.ndjson
+node -e '
+const c = require("crypto");
+const body = JSON.stringify({ events: [{ id: "evt-failmsg-1", chatId: "chat-failmsg", text: "FAIL_ALWAYS boom" }] });
+const sig = c.createHmac("sha256", "testsecret").update(body, "utf8").digest("hex");
+require("fs").writeFileSync("e2e-body.json", body);
+console.log(sig);
+' > e2e-sig.txt
+curl -s -o /dev/null -X POST "http://localhost:18740/api/echo/support/webhook" -H "Content-Type: application/json" -H "x-echo-signature: $(cat e2e-sig.txt)" --data-binary @e2e-body.json
+sleep 20
+rm -f e2e-sig.txt e2e-body.json
+grep -c 'Sorry, I ran into a problem handling that' test-outbox.ndjson
+aux4 queue dlq --name bot.e2e.test --port 18741 | jq -r '[.[] | select(.body.event.key == "evt-failmsg-1")] | length'
+```
+
+```expect
+1
+1
+```
+
+## Long-running brains — the lease is renewed while the brain runs, so it is never redelivered
+
+### a brain that outlives the lease's visibility timeout is not redelivered to a second worker, thanks to the renew heartbeat
+
+The worker started in "Server startup" is leasing from `bot.e2e.test` with
+`visibility: 30`, too long to exercise a redelivery race in a reasonable
+test time. This test self-leases from a SEPARATE queue with a short
+`visibility` directly (bypassing the long-running worker loop), so the
+timing is fully controlled: without a renew heartbeat, a 12-second brain
+held under a 3-second visibility would be redelivered to a second lease
+call around the 3s mark; with the heartbeat (half the visibility, i.e.
+every ~1.5s), the lease is continuously extended and no second lease call
+ever succeeds until the first `pull` finishes and acks.
+
+```timeout
+20000
+```
+
+```execute
+aux4 queue create --port 18741 --name bot.renew.test --workQueue true --maxAttempts 2 >/dev/null
+rm -f renew-outbox.ndjson
+touch renew-outbox.ndjson
+echo '{"channel":"echo","botId":"renewsupport","event":{"key":"evt-renew-1","chatId":"chat-renew","text":"SLOW_8 done"}}' | aux4 queue send --name bot.renew.test --port 18741 >/dev/null
+nohup aux4 bot work --mode pull --channels '["echo"]' --bots '{"renewsupport":{"channel":"echo","secret":"testsecret","outbox":"renew-outbox.ndjson","command":"node brain.js"}}' --defaults '{}' --db renew-bot-state.db --tmpDir renew-bot-tmp --queue '{"command":"queue","name":"bot.renew.test","storage":"memory","db":"","visibility":"3","maxAttempts":"2","port":"18741","token":""}' >renew-pull.log 2>&1 &
+PULLPID=$!
+sleep 5
+aux4 bot provider queue lease --name bot.renew.test --storage memory --db "" --port 18741 --token "" --visibility 3
+echo "mid-run lease exit=$?"
+wait $PULLPID
+cat renew-outbox.ndjson
+rm -f renew-bot-state.db renew-outbox.ndjson renew-pull.log
+rm -rf renew-bot-tmp
+aux4 queue delete --port 18741 --name bot.renew.test >/dev/null 2>&1
+```
+
+```expect:partial
+mid-run lease exit=4**{"type":"typing","chatId":"chat-renew"}**{"type":"message","chatId":"chat-renew","text":"SLOW_8 done*
+```
+
 ## POST ingest — enqueue failure releases the claim for retry
 
 Simulates "the queue is not running" by pointing `bot.queue.port` at a port
@@ -312,7 +387,7 @@ config:
     tmpDir: "test-bot-tmp"
     dedupeTtl: 300
     queue:
-      command: "aux4 queue"
+      command: "queue"
       name: "bot.e2e.test"
       storage: "memory"
       db: ".queue.db"
@@ -370,7 +445,7 @@ config:
     tmpDir: "test-bot-tmp"
     dedupeTtl: 300
     queue:
-      command: "aux4 queue"
+      command: "queue"
       name: "bot.e2e.test"
       storage: "memory"
       db: ".queue.db"

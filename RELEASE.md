@@ -1,5 +1,59 @@
 # Release Notes
 
+## 0.2.2
+
+BOT-012 (REWORK of BOT-012A): removes the remaining shell scripting from
+`package/.aux4`, restores `failureMessage`, adds the lease-renew heartbeat,
+and makes a work queue's `--webhook` push retry-safe (all via BOT-011's
+aux4/queue 0.2.3 + aux4/repository 1.3.9).
+
+- **No shell scripting left in `package/.aux4`.** The `if [ "${queue.command}"
+  = ... ]; then ... fi` validation (ingest, work-pull) and the `[ -z ... ]
+  && ... || ...` ack/nack branch (work-pull) are gone, replaced by a
+  validated dynamic-subcommand dispatch: `aux4 bot provider value(queue.command)
+  <op> ...`, routing to a new `bot:provider:queue` (and placeholder
+  `bot:provider:queue-sqs`, ready for BOT-017) profile. An unlisted
+  `queue.command` key now fails closed ("Command not found") instead of a
+  custom shell error message — and that allowlist lives in exactly ONE
+  place (the two leaf profiles), not duplicated in a separate JS array.
+  `lib/ingest.js`'s own `ALLOWED_QUEUE_COMMANDS` check is gone for the same
+  reason — `sendOne` now dispatches through the same `aux4 bot provider`
+  path (`lib/provider.js`) as everything else.
+- **`queue.command`'s value changed from a full command string (`"aux4
+  queue"`) to a short provider key (`"queue"`).** Existing configs must
+  update this one field; everything else is unchanged. This is a breaking
+  config-shape change (no backward-compat guarantee on this field, unlike
+  `aux4/todo`).
+- **Restored the `failureMessage` reply.** When a message's final nack
+  would dead-letter it (`attempts + 1 >= queue.maxAttempts`), and the bot
+  has `failureMessage` configured, it is sent to the chat (best-effort)
+  before the nack — so the user gets an apology instead of silence right
+  before the message is dead-lettered.
+- **Added a lease-renew heartbeat.** While the brain runs, `pull` (the
+  renamed `work-pull`) periodically calls the new `aux4 queue renew`
+  primitive (every half of `queue.visibility`) to extend the lease, so a
+  brain that legitimately runs longer than `queue.visibility` is no longer
+  redelivered to a second worker mid-run. This closes the "Known gap" from
+  0.2.0.
+- **A work queue's `--webhook` push is now retry-safe**, for free, via
+  aux4/queue 0.2.3 (BOT-011): it pushes through lease/ack/nack instead of
+  fire-and-forget, so a failing push is retried and eventually dead-lettered
+  instead of silently dropped. The pub/sub (non-work) webhook caveat from
+  0.2.0 is unchanged and still applies to a plain pub/sub queue.
+- **`--storage repository` queue names may contain a dash or a dot now**
+  (`bot-inbox`, `bot.inbox`) — the 0.2.0 "Known limitation" about SQL
+  identifiers is resolved in aux4/queue 0.2.3, not worked around in bot code.
+- The ack/nack decision, the empty-lease check, and the renew heartbeat all
+  moved into `lib/worker.js`'s `workPullProcess` (not `package/.aux4`):
+  aux4's own templating cannot safely branch on a value that may be empty,
+  the same limitation that already justified `ingestSend`'s per-item send
+  loop staying in JS since 0.1.1.
+- Bumped `aux4/queue@>=0.2.3` dependency pin.
+- 4 new tests (failureMessage, long-running-brain-renew-prevents-redelivery,
+  2 push-mode retry-safety tests); all 25 previously-shipped tests pass
+  unmodified (29/29 total). `aux4 lint run --strict true` clean; `grep -nE
+  'if \[|\[ -z|\[ -n|then |; fi|\$\(|case ' package/.aux4` returns nothing.
+
 ## 0.2.0
 
 BOT-012A: durable work-queue delivery (replaces pub/sub), per-chat

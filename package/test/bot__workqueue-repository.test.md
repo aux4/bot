@@ -26,7 +26,7 @@ config:
     tmpDir: "repo-bot-tmp"
     dedupeTtl: 300
     queue:
-      command: "aux4 queue"
+      command: "queue"
       name: "bot_repo_test"
       storage: "repository"
       db: "repo-queue.db"
@@ -51,6 +51,7 @@ rm -f repo-bot-state.db repo-outbox.ndjson repo-queue.db api.log worker.log brai
 rm -f .brain-marker-* e2e-sig*.txt e2e-body*.json
 rm -rf repo-bot-tmp .tmp
 pkill -f "bot worker" 2>/dev/null
+pkill -f "bot work --mode pull" 2>/dev/null
 true
 ```
 

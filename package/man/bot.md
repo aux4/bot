@@ -15,9 +15,13 @@ Subcommands:
 - **`ingest`** — aux4/api route handler for `POST /{channel}/{bot}/webhook`
   (verify signature → claim dedupe → enqueue → ack). Internal; wired via
   config, not run directly.
-- **`worker`** — long-running queue consumer: typing → conversation state →
-  brain → reply-once claim → format → send, with retry-with-backoff around
-  the brain call.
+- **`work`** — process exactly one message (`--mode pull` self-leases and
+  acks/nacks; `--mode push` is the `POST /bot/work` route handler).
+- **`worker`** — long-running loop around `work --mode pull`: lease →
+  typing → conversation state → brain (renewing the lease while it runs) →
+  reply-once claim → format → send → ack/nack, repeated forever.
+- **`provider`** — internal validated dynamic-subcommand dispatch to the
+  configured queue backend (`queue.command`); see `aux4 bot provider`.
 - **`clean`** — sweeps expired dedupe claims, reply-once guards,
   conversation state, and plugin installation rows.
 - **`echo`** — the in-repo reference/test channel plugin (not a real

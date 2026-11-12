@@ -22,11 +22,12 @@ Steps, in order:
    `aux4 repository claim` (ttl = the event's own `ttl`, falling back to
    `dedupeTtl`). A duplicate delivery — the id already claimed — is silently
    skipped, not an error.
-6. Every newly claimed event is sent to the work queue, one `<queue.command>
-   send --group <chatId>` call per event (`chatId`/`threadId` is the group
-   key, so per-chat messages are always delivered to a worker one at a
-   time). A batched webhook (e.g. WhatsApp's multi-message payloads) is
-   fully forwarded, not just its first event.
+6. Every newly claimed event is sent to the work queue, one `send` call
+   per event via the validated provider dispatch (`aux4 bot provider
+   value(queue.command) send ...` — see `aux4 bot provider`), with
+   `--group` set from `chatId`/`threadId` so per-chat messages are always
+   delivered to a worker one at a time. A batched webhook (e.g. WhatsApp's
+   multi-message payloads) is fully forwarded, not just its first event.
 7. Ack `200 {}` once every send succeeds. If any send fails (the queue was
    unreachable, a storage error, …), that event's claim from step 5 is
    **released** (so the platform's retry of that event is not treated as a
@@ -50,7 +51,7 @@ config:
 --defaults    Shared defaults merged under every bot (JSON object)
 --db          Repository database for event dedupe + conversations — local sqlite path or `libsql://` URL (default: `.bot/state.db`)
 --dedupeTtl   Fallback event-dedupe window in seconds, when a plugin event carries no ttl of its own (default: `300`)
---queue       Work-queue config, passed straight through to `queue.command` (default `aux4 queue`): `{command, name, storage, db, visibility, maxAttempts, port, token}`
+--queue       Work-queue config: `{command, name, storage, db, visibility, maxAttempts, port, token}`. `command` is a validated provider key (`queue` default) — see `aux4 bot provider`
 
 #### Example
 

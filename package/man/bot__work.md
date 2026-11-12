@@ -2,20 +2,24 @@
 
 `work` processes exactly **one** message and exits — the unit `aux4 bot
 worker`'s loop repeats forever, and that a Lambda-style single invocation
-can call once per trigger. It has two modes:
+can call once per trigger. It dispatches via a validated dynamic subcommand
+(`aux4 bot value(mode) ...`) to one of two internal commands:
 
-- **`--mode pull`** (default): self-leases the next eligible message from
-  the work queue (`<queue.command> lease`, honoring `--group` exclusivity
-  automatically — one message per chat at a time), processes it, and acks
-  on success or nacks on a brain failure. aux4/queue's own `attempts` +
-  `maxAttempts` (set on `queue create`) handle the retry count and
-  dead-lettering — there is no additional in-process retry here.
-- **`--mode push`**: the aux4/api route handler for `POST /bot/work`.
-  Processes the `{channel,botId,event}` message given directly in the
-  request body — there is no lease, because nothing was leased from a
-  queue; the message arrived as a push (e.g. aux4/queue's pub/sub
-  `--webhook` proxy, or any system that can POST JSON). Replies `200` on
-  success, `502` on a brain failure.
+- **`pull`** (default): self-leases the next eligible message from the
+  work queue via `aux4 bot provider` (honoring `--group` exclusivity
+  automatically — one message per chat at a time), processes it — renewing
+  the lease every half of `queue.visibility` while the brain runs (see
+  "Long-running brains" below) — and acks on success or nacks on a brain
+  failure. aux4/queue's own `attempts` + `maxAttempts` (set on `queue
+  create`) handle the retry count and dead-lettering — there is no
+  additional in-process retry here. On a final (dead-lettering) failure,
+  sends `bot.failureMessage` to the chat first, if configured.
+- **`push`**: the aux4/api route handler for `POST /bot/work`. Processes
+  the `{channel,botId,event}` message given directly in the request body —
+  there is no lease, because nothing was leased from a queue; the message
+  arrived as a push (a work queue's own retry-safe `--webhook`, aux4/queue
+  >=0.2.3, or any system that can POST JSON). Replies `200` on success,
+  `502` on a brain failure.
 
 Processing a message (either mode) does, in order: plugin `typing`
 (best-effort) → load conversation history → plugin `download` per
@@ -25,18 +29,16 @@ anything — this is what makes a crash-and-redelivery of the same message
 safe) → save conversation (sliding `threadTtl`) → plugin `format` → plugin
 `send`.
 
-**Caveat (push mode):** aux4/queue's webhook proxy (0.2.2) is
-fire-and-forget — it does not inspect `/bot/work`'s response status or
-retry on failure. A `502` here is correct and future-compatible, but
-nothing acts on it today; durable delivery needs `--mode pull` against a
-real work queue.
+**Push mode retry-safety depends on the webhook's queue.** A **work**
+queue's `--webhook` push goes through lease/ack/nack (a `502` here nacks,
+redelivered and eventually dead-lettered); a plain **pub/sub** queue's
+`--webhook` is still fire-and-forget by design (it never holds a lease).
 
-**Known gap (pull mode, long brains):** aux4/queue has no lease-renew/
-heartbeat primitive, so a message being processed by a brain that outlives
-`queue.visibility` can be redelivered to a second worker while the first is
-still running. Set `queue.visibility` generously for slow brains until
-aux4/queue adds one; `brainTimeout` is unset by default (unbounded) as of
-this version.
+**Long-running brains (pull mode):** `pull` renews the lease every half of
+`queue.visibility` via `aux4 queue renew` while the brain runs, so a brain
+that legitimately outlives `queue.visibility` is not redelivered to a
+second worker mid-run. `brainTimeout` is unset by default (unbounded); set
+it to cap a brain that may hang instead of just running long.
 
 #### Usage
 

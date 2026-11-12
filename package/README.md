@@ -98,8 +98,8 @@ config:
     db: "./.bot/state.db"               # repository sqlite file (dedupe + reply-once + conversations + installations)
     tmpDir: "./.bot/tmp"                # worker's attachment download scratch space
     dedupeTtl: 300                      # fallback event-dedupe window (seconds) when a plugin event has no ttl
-    queue:                              # work-queue config, forwarded straight through to queue.command — see below
-      command: "aux4 queue"
+    queue:                              # work-queue config — see "Work queue config" below
+      command: "queue"
       name: "bot-inbox"
       storage: "memory"
       db: ".bot/queue.db"
@@ -114,7 +114,7 @@ config:
       replyTtl: 3600                    # reply-once guard window (seconds)
       brainTimeout: ""                  # brain command timeout (ms); unset = unbounded (see "Long-running brains")
       historyMaxTurns: 20               # cap conversation history passed to the brain
-      failureMessage: "Sorry — I hit an error handling that request."  # currently unused — see Known limitations
+      failureMessage: "Sorry — I hit an error handling that request."  # sent once, on the final failed attempt, before dead-lettering
 
     bots:
       support:
@@ -132,14 +132,18 @@ channel plug in without any core schema change.
 
 ## Work queue config
 
-`bot.queue` is forwarded straight through to `queue.command` (default
-`aux4 queue`) — aux4/bot's own code never branches on which storage is
-configured:
+`bot.queue.command` selects the queue backend through a **validated
+dynamic-subcommand dispatch** (`aux4 bot provider <command> <op> ...`,
+internally routing to a `bot:provider:<command>` profile) — not a free-form
+string shelled out directly. An unlisted key fails closed ("Command not
+found") instead of running arbitrary config text, and the allowlist lives
+in exactly one place: the `bot:provider:queue` / `bot:provider:queue-sqs`
+profiles in `package/.aux4`.
 
 ```yaml
 queue:
-  command: "aux4 queue"   # must be allowlisted: "aux4 queue" or "aux4 queue-sqs"
-  name: "bot-inbox"       # queue name — see "Known limitations" for naming constraints
+  command: "queue"        # provider key: "queue" (aux4/queue) or "queue-sqs" (aux4/queue-sqs, once BOT-017 lands)
+  name: "bot-inbox"       # queue name — dashes/dots are fine under both storage modes (aux4/queue >=0.2.3)
   storage: "memory"       # memory (needs a running 'aux4 queue start --port ...') or repository (no server)
   db: ".bot/queue.db"     # repository storage only — sqlite path or libsql:// URL
   visibility: "30"        # lease visibility timeout, seconds
@@ -149,19 +153,19 @@ queue:
 ```
 
 Switching `storage: memory` to `storage: repository` (or, once it exists,
-pointing `command` at `aux4 queue-sqs`) needs no bot code change — see
+`command: "queue-sqs"`) needs no bot code change — see
 [aux4/queue](https://hub.aux4.io/r/public/packages/aux4/queue) for the full
-`create`/`send`/`lease`/`ack`/`nack`/`dlq` contract and the memory-vs-repository
-tradeoffs. `command` is validated against an allowlist before every call —
-it is never executed as arbitrary config text.
+`create`/`send`/`lease`/`ack`/`nack`/`dlq`/`renew` contract and the
+memory-vs-repository tradeoffs.
 
 **Push mode:** `POST /bot/work` → `aux4 bot work --mode push` processes a
 message given directly in the request body, with no lease — useful for
-feeding the bot from a system that can only push (e.g. aux4/queue's
-pub/sub `--webhook` proxy). **aux4/queue's webhook proxy is fire-and-forget
-as of 0.2.2** — it does not check the response status or retry on failure,
-so push mode has no durability/retry guarantee today; use `--mode pull`
-against a real work queue for that.
+feeding the bot from a system that can only push. Since aux4/queue 0.2.3, a
+**work queue's** `--webhook` push is retry-safe (it goes through
+lease/ack/nack: a 502 from this route nacks the delivery, redelivered and
+eventually dead-lettered instead of silently dropped). A **pub/sub**
+(non-work) queue's `--webhook` is still fire-and-forget by design, since it
+never holds a lease to nack — use a work queue for durability.
 
 ```yaml
 api:
@@ -170,13 +174,12 @@ api:
     public: true
 ```
 
-**Long-running brains:** aux4/queue has no lease-renew/heartbeat primitive,
-so a self-leased message (`--mode pull`) being processed by a brain that
-outlives `queue.visibility` can be redelivered to a second worker while the
-first is still running — there is no way for aux4/bot to extend its own
-lease mid-run. Set `queue.visibility` generously for slow brains until
-aux4/queue adds one (tracked separately); `brainTimeout` is unset by
-default (unbounded).
+**Long-running brains:** while the brain runs, `--mode pull` renews the
+lease every half of `queue.visibility` via `aux4 queue renew` — a brain
+that legitimately runs longer than `queue.visibility` is no longer
+redelivered to a second worker mid-run. `brainTimeout` is unset by default
+(unbounded); set it to cap a brain that may hang instead of just running
+long.
 
 ## Claim-based dedupe and the reply-once guard
 
@@ -309,21 +312,19 @@ same as aux4/slackbot's `clean`.
 
 ## Known limitations
 
-- **Queue names must be valid SQL identifiers under `storage: repository`**
-  — aux4/queue's repository mode builds a `<name>_messages` table name
-  without quoting it, so a dot or dash in `queue.name` (e.g. `bot.inbox`,
-  `bot-inbox`) fails with a SQL syntax error. Use alphanumerics/underscores
-  (e.g. `bot_inbox`) when `storage: repository`; memory storage has no such
-  restriction.
-- **No `failureMessage` reply on a brain failure anymore.** Before durable
-  queueing, a failed brain got a `failureMessage` apology after exhausting
-  in-process retries. Now a failed brain nacks for redelivery, and a
-  message that keeps failing is silently dead-lettered once
-  `queue.maxAttempts` is reached — no apology is ever sent. A future
-  `onMessage`/dead-letter hook to notify the user is tracked separately.
-- **No lease-renew/heartbeat for long-running brains** — see "Long-running
-  brains" above.
-- **Push mode has no retry/durability** — see "Push mode" above.
+- **Push mode on a pub/sub (non-work) queue has no retry/durability** — see
+  "Push mode" above. A work queue's `--webhook` push IS retry-safe
+  (aux4/queue >=0.2.3); only a plain pub/sub queue's webhook is
+  fire-and-forget by design.
+- **No dead-letter notification hook.** `failureMessage` is sent once, on
+  the final failed attempt, right before the message is dead-lettered —
+  but there is no further notification once it actually reaches `aux4
+  queue dlq` (e.g. an `onMessage`/dead-letter webhook to alert an operator).
+  Tracked separately.
+- **`queue-sqs` is a placeholder.** `queue.command: "queue-sqs"` is
+  allowlisted and dispatches correctly, but its leaf commands
+  (`bot:provider:queue-sqs` in `package/.aux4`) are not implemented yet —
+  they return a clear "not implemented" error until BOT-017 lands aux4/queue-sqs.
 
 ## License
 

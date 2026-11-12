@@ -40,9 +40,16 @@ config:
 aux4 api stop 2>/dev/null
 aux4 queue stop --port 18771 2>/dev/null
 rm -f push-bot-state.db push-outbox.ndjson push-brain.js api.log queue.log
+rm -f .push-brain-marker-*
 rm -rf push-bot-tmp .tmp
 true
 ```
+
+Note: BOT-011 (aux4/queue >=0.2.3) made a **work queue's** `--webhook` push
+retry-safe (lease/ack/nack instead of fire-and-forget) — see the "retry-safe
+push" section below. The caveat above is specifically about a **pub/sub**
+(non-work) queue's webhook, which is unaffected and still fire-and-forget by
+design (it never holds a lease to nack).
 
 ## Server startup
 
@@ -52,8 +59,18 @@ true
 rm -f push-bot-state.db push-outbox.ndjson
 rm -rf push-bot-tmp
 cat > push-brain.js <<'BRAINEOF'
+import fs from "fs";
 const text = process.argv[2] || "";
-if (text.startsWith("FAIL")) {
+const chatId = process.env.AUX4BOT_CHAT_ID || "";
+
+if (text.startsWith("FAIL_ONCE")) {
+  const marker = `.push-brain-marker-${chatId}`;
+  if (!fs.existsSync(marker)) {
+    fs.writeFileSync(marker, "1");
+    process.stderr.write("boom-once\n");
+    process.exit(1);
+  }
+} else if (text.startsWith("FAIL")) {
   process.stderr.write("boom\n");
   process.exit(1);
 }
@@ -104,4 +121,45 @@ echo "message-replies:$MSGLINES"
 
 ```expect
 message-replies:0
+```
+
+## Retry-safe push: a work queue's --webhook retries a failing push until it succeeds
+
+Unlike the pub/sub queue above, a **work queue** (`--workQueue true`) with
+`--webhook` configured pushes through aux4/queue's own lease/ack/nack: a
+502 from `/bot/work` nacks the delivery (redelivered, attempts incremented)
+instead of being silently dropped.
+
+### a push that fails once is retried by the queue itself and eventually replies
+
+```execute
+rm -f push-outbox.ndjson .push-brain-marker-chat-push-retry
+touch push-outbox.ndjson
+aux4 queue create --port 18771 --name bot.push.workqueue --workQueue true --maxAttempts 3 --webhook http://localhost:18770/api/bot/work >/dev/null
+echo '{"channel":"echo","botId":"support","event":{"key":"evt-push-retry-1","chatId":"chat-push-retry","text":"FAIL_ONCE please"}}' | aux4 queue send --name bot.push.workqueue --port 18771 >/dev/null
+sleep 3
+grep -c '"type":"message"' push-outbox.ndjson
+rm -f .push-brain-marker-chat-push-retry
+```
+
+```expect
+1
+```
+
+### a push that always fails is retried to maxAttempts and then dead-lettered, never silently dropped
+
+```execute
+rm -f push-outbox.ndjson
+touch push-outbox.ndjson
+echo '{"channel":"echo","botId":"support","event":{"key":"evt-push-dlq-1","chatId":"chat-push-dlq","text":"FAIL always"}}' | aux4 queue send --name bot.push.workqueue --port 18771 >/dev/null
+sleep 3
+aux4 queue dlq --name bot.push.workqueue --port 18771 | jq '[.[] | {attempts}]'
+```
+
+```expect
+[
+  {
+    "attempts": 3
+  }
+]
 ```
