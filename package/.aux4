@@ -1,7 +1,7 @@
 {
   "scope": "aux4",
   "name": "bot",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Generic multi-channel chatbot core: webhook -> claim-dedupe -> durable work queue -> lease/ack/nack -> plugin send",
   "dependencies": [
     "aux4/queue@>=0.2.2",
