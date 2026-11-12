@@ -46,9 +46,20 @@ config:
 
 ```afterAll
 aux4 api stop 2>/dev/null
-pkill -f "bot worker" 2>/dev/null
-pkill -f "crash-brain.js" 2>/dev/null
-rm -f crash-bot-state.db crash-outbox.ndjson crash-queue.db crash-brain.js api.log worker1.log worker2.log
+for PIDFILE in worker1.pid worker2.pid; do
+  if [ -f "$PIDFILE" ]; then
+    ALL="$(cat $PIDFILE)"
+    for i in 1 2 3 4 5 6; do
+      MORE=""
+      for P in $ALL; do
+        MORE="$MORE $(pgrep -P $P 2>/dev/null)"
+      done
+      ALL="$ALL $MORE"
+    done
+    for PID in $ALL; do kill -9 $PID 2>/dev/null; done
+  fi
+done
+rm -f crash-bot-state.db crash-outbox.ndjson crash-queue.db crash-brain.js api.log worker1.log worker2.log worker1.pid worker2.pid
 rm -f e2e-sig.txt e2e-body.json
 rm -rf crash-bot-tmp .tmp
 true
@@ -110,17 +121,36 @@ hs-crash-123**200
 
 ```execute
 nohup aux4 bot worker --configFile config.yaml --config bot >worker1.log 2>&1 &
+WORKER1PID=$!
+echo $WORKER1PID > worker1.pid
 sleep 1
-pkill -9 -f "crash-brain.js" 2>/dev/null
-pkill -9 -f "bot worker" 2>/dev/null
+ALL="$WORKER1PID"
+for i in 1 2 3 4 5 6; do
+  MORE=""
+  for P in $ALL; do
+    MORE="$MORE $(pgrep -P $P 2>/dev/null)"
+  done
+  ALL="$ALL $MORE"
+done
+for PID in $ALL; do kill -9 $PID 2>/dev/null; done
 sleep 1
 touch crash-outbox.ndjson
 BEFORE=$(grep -c '"type":"message"' crash-outbox.ndjson)
 echo "replies-before-restart:$BEFORE"
 sleep 3
 nohup aux4 bot worker --configFile config.yaml --config bot >worker2.log 2>&1 &
+WORKER2PID=$!
+echo $WORKER2PID > worker2.pid
 sleep 8
-pkill -f "bot worker" 2>/dev/null
+ALL="$WORKER2PID"
+for i in 1 2 3 4 5 6; do
+  MORE=""
+  for P in $ALL; do
+    MORE="$MORE $(pgrep -P $P 2>/dev/null)"
+  done
+  ALL="$ALL $MORE"
+done
+for PID in $ALL; do kill -9 $PID 2>/dev/null; done
 AFTER=$(grep -c '"type":"message"' crash-outbox.ndjson)
 echo "replies-after-restart:$AFTER"
 ```

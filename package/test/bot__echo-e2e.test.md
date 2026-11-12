@@ -48,11 +48,11 @@ config:
 
 ```afterAll
 aux4 api stop 2>/dev/null
-pkill -f "bot worker" 2>/dev/null
 aux4 queue stop --port 18741 2>/dev/null
 rm -f test-bot-state.db test-outbox.ndjson queue.log api.log worker.log .queue.db brain.js
 rm -f .brain-marker-* e2e-sig*.txt e2e-body*.json
 rm -rf test-bot-tmp .tmp
+pkill -f "bot worker" 2>/dev/null
 true
 ```
 

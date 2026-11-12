@@ -47,10 +47,10 @@ config:
 
 ```afterAll
 aux4 api stop 2>/dev/null
-pkill -f "bot worker" 2>/dev/null
 rm -f repo-bot-state.db repo-outbox.ndjson repo-queue.db api.log worker.log brain.js
 rm -f .brain-marker-* e2e-sig*.txt e2e-body*.json
 rm -rf repo-bot-tmp .tmp
+pkill -f "bot worker" 2>/dev/null
 true
 ```
 
