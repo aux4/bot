@@ -32,7 +32,7 @@ Platform ─GET/POST /{channel}/{bot}/webhook─▶ aux4/api → aux4 bot verify
     verify (GET):  resolve {channel}/{bot} (allowlist) · plugin verify (handshake) · ack
     ingest (POST): resolve {channel}/{bot} (allowlist) · plugin verify (HMAC over rawBody)
                    · plugin ingest-parse → normalized events · claim(channel:bot:key) dedupe
-                   · <queue.command> send --group <chatId>  · ack 200     < all before any reply is sent
+                   · aux4 queue send --provider <queue.provider> --group <chatId> · ack 200  < all before any reply is sent
                               │
                      aux4/queue work queue (durable: ack/nack/lease, per-group exclusivity)
                               │
@@ -58,9 +58,10 @@ Delivery itself goes through [aux4/queue](https://hub.aux4.io/r/public/packages/
 **work queue** mode (`create --workQueue true` / repository storage): every
 message is leased by exactly one worker at a time, a failed brain nacks for
 redelivery, and `queue.maxAttempts` dead-letters a message that keeps
-failing. aux4/bot's own code never branches on which storage is configured
-— it just forwards `queue.*` straight through to `queue.command` (default
-`aux4 queue`; see [Work queue config](#work-queue-config) below).
+failing. aux4/bot's own code never branches on which provider is configured
+— it just forwards `queue.*` straight through to `aux4 queue <op> --provider
+value(queue.provider)` (default `memory`; see [Work queue config](#work-queue-config)
+below).
 
 A full deployment runs these processes:
 
@@ -99,9 +100,8 @@ config:
     tmpDir: "./.bot/tmp"                # worker's attachment download scratch space
     dedupeTtl: 300                      # fallback event-dedupe window (seconds) when a plugin event has no ttl
     queue:                              # work-queue config — see "Work queue config" below
-      command: "queue"
+      provider: "memory"
       name: "bot-inbox"
-      storage: "memory"
       db: ".bot/queue.db"
       visibility: "30"
       maxAttempts: "5"
@@ -132,31 +132,34 @@ channel plug in without any core schema change.
 
 ## Work queue config
 
-`bot.queue.command` selects the queue backend through a **validated
-dynamic-subcommand dispatch** (`aux4 bot provider <command> <op> ...`,
-internally routing to a `bot:provider:<command>` profile) — not a free-form
-string shelled out directly. An unlisted key fails closed ("Command not
-found") instead of running arbitrary config text, and the allowlist lives
-in exactly one place: the `bot:provider:queue` / `bot:provider:queue-sqs`
-profiles in `package/.aux4`.
+`bot.queue.provider` selects the queue backend and is forwarded straight
+through to [aux4/queue](https://hub.aux4.io/r/public/packages/aux4/queue)'s
+own `--provider` flag (`aux4 queue <op> --provider value(queue.provider) ...`)
+— there is no bot-side allowlist anymore. `aux4/queue` itself fails closed
+with a clear `install aux4/queue-<provider>` error for an unknown or
+not-installed provider, so adding a new backend (e.g.
+[aux4/queue-sqs](https://hub.aux4.io/r/public/packages/aux4/queue-sqs) or
+[aux4/queue-cloud](https://hub.aux4.io/r/public/packages/aux4/queue-cloud))
+is just installing that plugin — no change to this package.
 
 ```yaml
 queue:
-  command: "queue"        # provider key: "queue" (aux4/queue) or "queue-sqs" (aux4/queue-sqs, once BOT-017 lands)
-  name: "bot-inbox"       # queue name — dashes/dots are fine under both storage modes (aux4/queue >=0.2.3)
-  storage: "memory"       # memory (needs a running 'aux4 queue start --port ...') or repository (no server)
-  db: ".bot/queue.db"     # repository storage only — sqlite path or libsql:// URL
+  provider: "memory"      # memory, repository, sqs, cloud, or any other installed aux4/queue-<provider> plugin
+  name: "bot-inbox"       # queue name — dashes/dots are fine under memory/repository (aux4/queue >=0.2.3)
+  db: ".bot/queue.db"     # repository provider only — sqlite path or libsql:// URL
   visibility: "30"        # lease visibility timeout, seconds
-  maxAttempts: "5"        # nacks before a message is dead-lettered (0 = unlimited)
-  port: "8420"            # memory storage only
-  token: ""               # memory storage only
+  maxAttempts: "5"        # nacks before a message is dead-lettered (0 = unlimited; ignored by some providers)
+  port: "8420"            # memory provider only
+  token: ""               # memory provider only
 ```
 
-Switching `storage: memory` to `storage: repository` (or, once it exists,
-`command: "queue-sqs"`) needs no bot code change — see
-[aux4/queue](https://hub.aux4.io/r/public/packages/aux4/queue) for the full
-`create`/`send`/`lease`/`ack`/`nack`/`dlq`/`renew` contract and the
-memory-vs-repository tradeoffs.
+**Backward compatibility (one version):** the pre-0.2.0 shape
+`queue: {command: "queue", storage: "memory"}` (or `command: "queue-sqs"`)
+still works — `command`/`storage` are read as aliases for `provider` when
+`provider` itself is not set. Switching providers needs no bot code change
+either way — see aux4/queue for the full
+`create`/`send`/`lease`/`ack`/`nack`/`dlq`/`renew` contract and each
+provider's own tradeoffs.
 
 **Push mode:** `POST /bot/work` → `aux4 bot work --mode push` processes a
 message given directly in the request body, with no lease — useful for
@@ -321,10 +324,10 @@ same as aux4/slackbot's `clean`.
   but there is no further notification once it actually reaches `aux4
   queue dlq` (e.g. an `onMessage`/dead-letter webhook to alert an operator).
   Tracked separately.
-- **`queue-sqs` is a placeholder.** `queue.command: "queue-sqs"` is
-  allowlisted and dispatches correctly, but its leaf commands
-  (`bot:provider:queue-sqs` in `package/.aux4`) are not implemented yet —
-  they return a clear "not implemented" error until BOT-017 lands aux4/queue-sqs.
+- **Additional providers are separate packages.** `queue.provider: "sqs"` (or
+  `"cloud"`) works once [aux4/queue-sqs](https://hub.aux4.io/r/public/packages/aux4/queue-sqs)
+  (or [aux4/queue-cloud](https://hub.aux4.io/r/public/packages/aux4/queue-cloud)) is installed
+  alongside `aux4/queue` — this package has no list of providers to keep in sync.
 
 ## License
 

@@ -348,7 +348,7 @@ echo '{"channel":"echo","botId":"renewsupport","event":{"key":"evt-renew-1","cha
 nohup aux4 bot work --mode pull --channels '["echo"]' --bots '{"renewsupport":{"channel":"echo","secret":"testsecret","outbox":"renew-outbox.ndjson","command":"node brain.js"}}' --defaults '{}' --db renew-bot-state.db --tmpDir renew-bot-tmp --queue '{"command":"queue","name":"bot.renew.test","storage":"memory","db":"","visibility":"3","maxAttempts":"2","port":"18741","token":""}' >renew-pull.log 2>&1 &
 PULLPID=$!
 sleep 5
-aux4 bot provider queue lease --name bot.renew.test --storage memory --db "" --port 18741 --token "" --visibility 3
+aux4 queue lease --provider memory --name bot.renew.test --db "" --port 18741 --token "" --visibility 3
 echo "mid-run lease exit=$?"
 wait $PULLPID
 cat renew-outbox.ndjson
