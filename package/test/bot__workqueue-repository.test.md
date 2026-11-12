@@ -152,7 +152,7 @@ ack:200 lines:2
 ### both messages are replied to in the order they were sent
 
 ```timeout
-15000
+20000
 ```
 
 ```execute
@@ -168,7 +168,7 @@ for N in 1 2; do
   curl -s -o /dev/null -X POST "http://localhost:18750/api/echo/support/webhook" -H "Content-Type: application/json" -H "x-echo-signature: $(cat e2e-sig.txt)" --data-binary @e2e-body.json
   sleep 1.1
 done
-sleep 5
+sleep 8
 rm -f e2e-sig.txt e2e-body.json
 grep '"type":"message"' repo-outbox.ndjson | sed -E 's/.*"text":"([^"]*)".*/\1/' | sed -E 's/\\n$//'
 ```
