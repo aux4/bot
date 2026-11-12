@@ -1,7 +1,7 @@
 {
   "scope": "aux4",
   "name": "bot",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Generic multi-channel chatbot core: webhook -> claim-dedupe -> durable work queue -> lease/ack/nack -> plugin send",
   "dependencies": [
     "aux4/queue@>=0.2.3",
@@ -106,7 +106,7 @@
               },
               {
                 "name": "toSend",
-                "text": "Internal: set by this command's own pipeline (the events to enqueue) \u2014 not meant to be passed in",
+                "text": "Internal: set by this command's own pipeline (the events to enqueue) — not meant to be passed in",
                 "default": "[]"
               },
               {
@@ -182,7 +182,7 @@
             "node ${packageDir}/lib/bot.mjs work-pull-process values(channels, bots, defaults, db, tmpDir, queue, response)"
           ],
           "help": {
-            "text": "Self-lease the next eligible message from the queue (one at a time per group) via the validated provider dispatch (see 'provider'), process it (renewing the lease while the brain runs), and ack on success or nack on a brain failure. The lease call is allowed to find nothing eligible (exits non-zero; the trailing ';true' is a plain unconditional sequence, not a conditional branch, so the pipeline can inspect the normalized {leased:false} result instead of the exit code) \u2014 everything past that point (the empty check, the ack/nack decision, the failureMessage reply) is decided in lib/worker.js, not here, since aux4's own templating cannot safely branch on a value that may be empty (see README)",
+            "text": "Self-lease the next eligible message from the queue (one at a time per group) via the validated provider dispatch (see 'provider'), process it (renewing the lease while the brain runs), and ack on success or nack on a brain failure. The lease call is allowed to find nothing eligible (exits non-zero; the trailing ';true' is a plain unconditional sequence, not a conditional branch, so the pipeline can inspect the normalized {leased:false} result instead of the exit code) — everything past that point (the empty check, the ack/nack decision, the failureMessage reply) is decided in lib/worker.js, not here, since aux4's own templating cannot safely branch on a value that may be empty (see README)",
             "variables": [
               {
                 "name": "channels",
@@ -216,7 +216,7 @@
               },
               {
                 "name": "response",
-                "text": "Internal: set by this command's own pipeline (the normalized lease) \u2014 not meant to be passed in",
+                "text": "Internal: set by this command's own pipeline (the normalized lease) — not meant to be passed in",
                 "default": "{}"
               }
             ]
@@ -230,7 +230,7 @@
             "stdin:node ${packageDir}/lib/bot.mjs work-push values(channels, bots, defaults, db, tmpDir)"
           ],
           "help": {
-            "text": "aux4/api route handler for POST /bot/work: processes the {channel,botId,event} message in the request body directly, no lease/ack/nack. Used for push-style delivery \u2014 a work queue's own retry-safe --webhook push (aux4/queue >=0.2.3), or any other system that can POST JSON",
+            "text": "aux4/api route handler for POST /bot/work: processes the {channel,botId,event} message in the request body directly, no lease/ack/nack. Used for push-style delivery — a work queue's own retry-safe --webhook push (aux4/queue >=0.2.3), or any other system that can POST JSON",
             "variables": [
               {
                 "name": "channels",
@@ -328,7 +328,7 @@
             "profile:bot:echo"
           ],
           "help": {
-            "text": "The 'echo' channel plugin \u2014 a reference implementation and in-repo test fixture (not a real platform)"
+            "text": "The 'echo' channel plugin — a reference implementation and in-repo test fixture (not a real platform)"
           }
         }
       ]
