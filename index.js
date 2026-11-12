@@ -1,6 +1,6 @@
 import { verify } from "./lib/verify.js";
-import { ingest } from "./lib/ingest.js";
-import { worker } from "./lib/worker.js";
+import { ingestPrepare, ingestSend, ingestReply } from "./lib/ingest.js";
+import { leaseNormalize, workPullProcess, workPush } from "./lib/worker.js";
 import { clean } from "./lib/clean.js";
 import * as echo from "./lib/echo.js";
 
@@ -12,11 +12,23 @@ import * as echo from "./lib/echo.js";
       case "verify":
         await verify(args);
         break;
-      case "ingest":
-        await ingest(args);
+      case "ingest-prepare":
+        await ingestPrepare(args);
         break;
-      case "worker":
-        await worker(args);
+      case "ingest-send":
+        await ingestSend(args);
+        break;
+      case "ingest-reply":
+        await ingestReply(args);
+        break;
+      case "lease-normalize":
+        await leaseNormalize(args);
+        break;
+      case "work-pull-process":
+        await workPullProcess(args);
+        break;
+      case "work-push":
+        await workPush(args);
         break;
       case "clean":
         await clean(args);

@@ -22,11 +22,18 @@ Steps, in order:
    `aux4 repository claim` (ttl = the event's own `ttl`, falling back to
    `dedupeTtl`). A duplicate delivery — the id already claimed — is silently
    skipped, not an error.
-6. Enqueue every newly claimed event onto `queueName` for the worker to pick
-   up.
-7. Ack `200 {}` — always, once steps 1–3 have passed, regardless of how many
-   events were duplicates. The response time to the platform never depends on
-   how long the brain takes to answer.
+6. Every newly claimed event is sent to the work queue, one `<queue.command>
+   send --group <chatId>` call per event (`chatId`/`threadId` is the group
+   key, so per-chat messages are always delivered to a worker one at a
+   time). A batched webhook (e.g. WhatsApp's multi-message payloads) is
+   fully forwarded, not just its first event.
+7. Ack `200 {}` once every send succeeds. If any send fails (the queue was
+   unreachable, a storage error, …), that event's claim from step 5 is
+   **released** (so the platform's retry of that event is not treated as a
+   duplicate — events that did succeed stay claimed and are skipped on
+   retry) and the response is `502` instead, so the platform actually
+   retries. The response time to the platform never depends on how long the
+   brain takes to answer — that happens later, in the worker.
 
 #### Usage
 
@@ -41,10 +48,9 @@ config:
 --channels    Allowlisted channel names (JSON array)
 --bots        Map of botId -> per-bot config (JSON object)
 --defaults    Shared defaults merged under every bot (JSON object)
---db          Repository database — local sqlite path or `libsql://` URL (default: `.bot/state.db`)
---queueName   aux4/queue dispatch queue name (default: `bot.inbound`)
---queueUrl    aux4/queue server URL — only the port is used (default: `http://localhost:8430`)
+--db          Repository database for event dedupe + conversations — local sqlite path or `libsql://` URL (default: `.bot/state.db`)
 --dedupeTtl   Fallback event-dedupe window in seconds, when a plugin event carries no ttl of its own (default: `300`)
+--queue       Work-queue config, passed straight through to `queue.command` (default `aux4 queue`): `{command, name, storage, db, visibility, maxAttempts, port, token}`
 
 #### Example
 

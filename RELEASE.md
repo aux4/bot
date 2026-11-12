@@ -1,5 +1,46 @@
 # Release Notes
 
+## 0.2.0
+
+BOT-012A: durable work-queue delivery (replaces pub/sub), per-chat
+serialization, single-message/push unit, both aux4/queue storage modes.
+
+- **Replaced pub/sub with aux4/queue's durable work-queue mode.** `ingest`
+  now claims the dedupe id and then composes `<queue.command> send --group
+  <chatId>` in `package/.aux4` (not a JS subprocess wrapper — `lib/queue.js`
+  is gone). Removed `aux4/queue@>=0.2.2` pub/sub-only usage.
+- **New `aux4 bot work`** — processes exactly one message and exits.
+  `--mode pull` (default) self-leases from the queue and acks on success /
+  nacks on a brain failure (no more in-process retry/backoff — aux4/queue's
+  own `attempts`/`maxAttempts` drive redelivery and dead-lettering).
+  `--mode push` is the new `POST /bot/work` route: processes a message
+  given directly in the request body, no lease (fed by e.g. aux4/queue's
+  pub/sub `--webhook` proxy — fire-and-forget as of 0.2.2, no retry on that
+  path yet).
+- **`aux4 bot worker`** is now a loop around `work --mode pull`, not a
+  persistent pub/sub `receive` stream.
+- **Per-chat serialization** comes from aux4/queue's own `--group`
+  exclusivity (set from `chatId`/`threadId` on send) — true regardless of
+  how many workers are running.
+- **New `bot.queue` config**: `{command, name, storage, db, visibility,
+  maxAttempts, port, token}`. `storage: memory|repository` and `command`
+  (default `aux4 queue`, allowlisted — `aux4 queue-sqs` is the other
+  planned option) are forwarded straight through; bot code never branches
+  on which one is configured. Tested against both storage modes.
+- **`brainTimeout` is now unset by default** (unbounded) instead of
+  120000ms, since a long-running brain is no longer bounded by an
+  in-process retry loop. `brainRetries`/`failureMessage` are no longer
+  used — see README "Known limitations".
+- Known limitation: `queue.name` must be a valid SQL identifier
+  (alphanumeric/underscore) when `storage: repository` — a dot or dash
+  fails with a SQL syntax error (aux4/queue does not quote the generated
+  table name). No bot code works around this; use e.g. `bot_inbox`.
+- Known gap: no lease-renew/heartbeat primitive exists in aux4/queue yet, so
+  a self-leased message can be redelivered while a slow brain is still
+  running on the original lease — tracked separately as a follow-up for
+  aux4/queue.
+- Bumped `aux4/queue@>=0.2.2` dependency pin.
+
 ## 0.1.1
 
 Review follow-ups from the BOT-003 dev review.

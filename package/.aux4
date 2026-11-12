@@ -1,10 +1,10 @@
 {
   "scope": "aux4",
   "name": "bot",
-  "version": "0.1.2",
-  "description": "Generic multi-channel chatbot core: webhook -> claim-dedupe -> queue -> worker -> plugin send",
+  "version": "0.2.0",
+  "description": "Generic multi-channel chatbot core: webhook -> claim-dedupe -> durable work queue -> lease/ack/nack -> plugin send",
   "dependencies": [
-    "aux4/queue",
+    "aux4/queue@>=0.2.2",
     "aux4/api@>=2.1.12",
     "aux4/repository@>=1.3.4"
   ],
@@ -65,10 +65,15 @@
           "private": true,
           "noHooks": true,
           "execute": [
-            "stdin:node ${packageDir}/lib/bot.mjs ingest values(channels, bots, defaults, db, queueName, queueUrl, dedupeTtl)"
+            "if [ \"${queue.command}\" = \"aux4 queue\" ] || [ \"${queue.command}\" = \"aux4 queue-sqs\" ]; then true; else echo \"Error: queue.command must be 'aux4 queue' or 'aux4 queue-sqs'\" >&2 && exit 1; fi",
+            "json:stdin:node ${packageDir}/lib/bot.mjs ingest-prepare values(channels, bots, defaults, db, dedupeTtl)",
+            "set:toSend=${response.toSend}",
+            "set:replyStatus=${response.statusCode}",
+            "set:replyBody=${response.body}",
+            "node ${packageDir}/lib/bot.mjs ingest-send values(queue, db, toSend, replyStatus, replyBody)"
           ],
           "help": {
-            "text": "aux4/api route handler for POST /{channel}/{bot}/webhook (verify -> claim dedupe -> enqueue -> ack)",
+            "text": "aux4/api route handler for POST /{channel}/{bot}/webhook (verify -> claim dedupe -> '<queue.command> send --group <chatId>' -> ack)",
             "variables": [
               {
                 "name": "channels",
@@ -87,35 +92,54 @@
               },
               {
                 "name": "db",
-                "text": "Repository database (local sqlite path or libsql:// URL)",
+                "text": "Repository database for bot state: event dedupe + conversations (local sqlite path or libsql:// URL)",
                 "default": ".bot/state.db"
-              },
-              {
-                "name": "queueName",
-                "text": "aux4/queue dispatch queue name",
-                "default": "bot.inbound"
-              },
-              {
-                "name": "queueUrl",
-                "text": "aux4/queue server URL (only the port is used)",
-                "default": "http://localhost:8430"
               },
               {
                 "name": "dedupeTtl",
                 "text": "Event dedupe window in seconds, when a plugin event has no ttl of its own",
                 "default": "300"
+              },
+              {
+                "name": "queue",
+                "text": "Work-queue config, passed straight through to queue.command: {command, name, storage, db, visibility, maxAttempts, port, token}. command defaults to 'aux4 queue' and must be an allowlisted queue CLI (aux4 queue | aux4 queue-sqs) implementing the same create/send/lease/ack/nack/dlq contract; storage is memory|repository (ignored by a command that has no such concept, e.g. aux4 queue-sqs); db/port/token are only used by the matching storage",
+                "default": "{\"command\":\"aux4 queue\",\"name\":\"bot-inbox\",\"storage\":\"memory\",\"db\":\".bot/queue.db\",\"visibility\":\"30\",\"maxAttempts\":\"5\",\"port\":\"8420\",\"token\":\"\"}"
+              },
+              {
+                "name": "toSend",
+                "text": "Internal: set by this command's own pipeline (the events to enqueue) — not meant to be passed in",
+                "default": "[]"
+              },
+              {
+                "name": "replyStatus",
+                "text": "Internal: the HTTP status to reply with on success",
+                "default": "200"
+              },
+              {
+                "name": "replyBody",
+                "text": "Internal: the HTTP body to reply with on success",
+                "default": "{}"
               }
             ]
           }
         },
         {
-          "name": "worker",
+          "name": "work",
           "execute": [
-            "node ${packageDir}/lib/bot.mjs worker values(channels, bots, defaults, db, tmpDir, queueName, queueUrl)"
+            "stdin:if [ value(mode) = \"push\" ]; then aux4 bot work-push param(channels) param(bots) param(defaults) param(db) param(tmpDir); else aux4 bot work-pull param(channels) param(bots) param(defaults) param(db) param(tmpDir) param(queue); fi"
           ],
           "help": {
-            "text": "Long-running queue consumer: typing -> brain -> plugin format+send, with retry and a reply-once guard",
+            "text": "Process exactly one message: --mode pull (default) self-leases the next eligible message from the queue and acks/nacks it; --mode push is the aux4/api route handler for POST /bot/work, processing the message given in the request body directly (no lease). Suitable for a single Lambda-style invocation",
             "variables": [
+              {
+                "name": "mode",
+                "text": "pull (self-lease from the queue) or push (process the request body directly, no lease)",
+                "default": "pull",
+                "options": [
+                  "pull",
+                  "push"
+                ]
+              },
               {
                 "name": "channels",
                 "text": "Allowlisted channel names (JSON array)",
@@ -133,7 +157,7 @@
               },
               {
                 "name": "db",
-                "text": "Repository database (local sqlite path or libsql:// URL)",
+                "text": "Repository database for bot state: event dedupe + conversations (local sqlite path or libsql:// URL)",
                 "default": ".bot/state.db"
               },
               {
@@ -142,14 +166,146 @@
                 "default": ".bot/tmp"
               },
               {
-                "name": "queueName",
-                "text": "aux4/queue dispatch queue name",
-                "default": "bot.inbound"
+                "name": "queue",
+                "text": "Work-queue config, passed straight through to queue.command (--mode pull only): {command, name, storage, db, visibility, maxAttempts, port, token}",
+                "default": "{\"command\":\"aux4 queue\",\"name\":\"bot-inbox\",\"storage\":\"memory\",\"db\":\".bot/queue.db\",\"visibility\":\"30\",\"maxAttempts\":\"5\",\"port\":\"8420\",\"token\":\"\"}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "work-pull",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "if [ \"${queue.command}\" = \"aux4 queue\" ] || [ \"${queue.command}\" = \"aux4 queue-sqs\" ]; then true; else echo \"Error: queue.command must be 'aux4 queue' or 'aux4 queue-sqs'\" >&2 && exit 1; fi",
+            "nout:${queue.command} lease --name ${queue.name} --storage ${queue.storage} --db ${queue.db} --port ${queue.port} --token ${queue.token} --visibility ${queue.visibility} --maxAttempts ${queue.maxAttempts} || echo '[]'",
+            "json:node ${packageDir}/lib/bot.mjs lease-normalize values(response)",
+            "set:leaseId=${response.leaseId}",
+            "set:id=${response.id}",
+            "if [ -z \"${leaseId}\" ] && [ -z \"${id}\" ]; then echo '{\"leased\":false}'; else node ${packageDir}/lib/bot.mjs work-pull-process values(channels, bots, defaults, db, tmpDir, response) && ${queue.command} ack --name ${queue.name} --storage ${queue.storage} --db ${queue.db} --port ${queue.port} --token ${queue.token} param(leaseId) param(id) || ${queue.command} nack --name ${queue.name} --storage ${queue.storage} --db ${queue.db} --port ${queue.port} --token ${queue.token} --maxAttempts ${queue.maxAttempts} param(leaseId) param(id); fi"
+          ],
+          "help": {
+            "text": "Self-lease the next eligible message from the queue (one at a time per group), process it, and ack on success or nack on a brain failure",
+            "variables": [
+              {
+                "name": "channels",
+                "text": "Allowlisted channel names (JSON array)",
+                "default": "[]"
               },
               {
-                "name": "queueUrl",
-                "text": "aux4/queue server URL (only the port is used)",
-                "default": "http://localhost:8430"
+                "name": "bots",
+                "text": "Map of botId -> per-bot config (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "defaults",
+                "text": "Shared defaults merged under every bot (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "db",
+                "text": "Repository database for bot state (local sqlite path or libsql:// URL)",
+                "default": ".bot/state.db"
+              },
+              {
+                "name": "tmpDir",
+                "text": "Working directory for downloaded attachments",
+                "default": ".bot/tmp"
+              },
+              {
+                "name": "queue",
+                "text": "aux4/queue config: {name, storage, db, visibility, maxAttempts, port, token}",
+                "default": "{\"command\":\"aux4 queue\",\"name\":\"bot-inbox\",\"storage\":\"memory\",\"db\":\".bot/queue.db\",\"visibility\":\"30\",\"maxAttempts\":\"5\",\"port\":\"8420\",\"token\":\"\"}"
+              },
+              {
+                "name": "response",
+                "text": "Internal: set by this command's own pipeline (the normalized lease) — not meant to be passed in",
+                "default": "{}"
+              }
+            ]
+          }
+        },
+        {
+          "name": "work-push",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "stdin:node ${packageDir}/lib/bot.mjs work-push values(channels, bots, defaults, db, tmpDir)"
+          ],
+          "help": {
+            "text": "aux4/api route handler for POST /bot/work: processes the {channel,botId,event} message in the request body directly, no lease/ack/nack. Used for push-style delivery (e.g. aux4/queue's pub/sub --webhook proxy)",
+            "variables": [
+              {
+                "name": "channels",
+                "text": "Allowlisted channel names (JSON array)",
+                "default": "[]"
+              },
+              {
+                "name": "bots",
+                "text": "Map of botId -> per-bot config (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "defaults",
+                "text": "Shared defaults merged under every bot (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "db",
+                "text": "Repository database for bot state (local sqlite path or libsql:// URL)",
+                "default": ".bot/state.db"
+              },
+              {
+                "name": "tmpDir",
+                "text": "Working directory for downloaded attachments",
+                "default": ".bot/tmp"
+              }
+            ]
+          }
+        },
+        {
+          "name": "worker",
+          "execute": [
+            "while true; do aux4 bot work --mode pull param(channels) param(bots) param(defaults) param(db) param(tmpDir) param(queue); sleep value(pollInterval); done"
+          ],
+          "help": {
+            "text": "Long-running loop around 'aux4 bot work --mode pull': lease -> process -> ack/nack, repeated forever with a fixed poll interval when idle",
+            "variables": [
+              {
+                "name": "channels",
+                "text": "Allowlisted channel names (JSON array)",
+                "default": "[]"
+              },
+              {
+                "name": "bots",
+                "text": "Map of botId -> per-bot config (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "defaults",
+                "text": "Shared defaults merged under every bot (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "db",
+                "text": "Repository database for bot state (local sqlite path or libsql:// URL)",
+                "default": ".bot/state.db"
+              },
+              {
+                "name": "tmpDir",
+                "text": "Working directory for downloaded attachments",
+                "default": ".bot/tmp"
+              },
+              {
+                "name": "pollInterval",
+                "text": "Seconds to sleep between lease attempts (every attempt, hit or idle)",
+                "default": "1"
+              },
+              {
+                "name": "queue",
+                "text": "aux4/queue config: {name, storage, db, visibility, maxAttempts, port, token}",
+                "default": "{\"command\":\"aux4 queue\",\"name\":\"bot-inbox\",\"storage\":\"memory\",\"db\":\".bot/queue.db\",\"visibility\":\"30\",\"maxAttempts\":\"5\",\"port\":\"8420\",\"token\":\"\"}"
               }
             ]
           }
