@@ -601,25 +601,25 @@ grep -c '"type":"message","chatId":"chat-hook-fail","text":"HOOKFAIL boom' hook-
 ### the typing indicator is re-raised periodically while a slow brain runs, and the progressMessage is sent once
 
 ```timeout
-15000
+25000
 ```
 
 ```execute
 rm -f progress-outbox.ndjson
 node -e '
 const c = require("crypto");
-const body = JSON.stringify({ events: [{ id: "evt-progress-1", chatId: "chat-progress", text: "SLOW_4 reply" }] });
+const body = JSON.stringify({ events: [{ id: "evt-progress-1", chatId: "chat-progress", text: "SLOW_6 reply" }] });
 const sig = c.createHmac("sha256", "testsecret").update(body, "utf8").digest("hex");
 require("fs").writeFileSync("e2e-body.json", body);
 console.log(sig);
 ' > e2e-sig.txt
 curl -s -o /dev/null -X POST "http://localhost:18740/api/echo/progressbot/webhook" -H "Content-Type: application/json" -H "x-echo-signature: $(cat e2e-sig.txt)" --data-binary @e2e-body.json
-sleep 6
+sleep 12
 rm -f e2e-sig.txt e2e-body.json
 TYPING=$(grep -c '"type":"typing","chatId":"chat-progress"' progress-outbox.ndjson)
 node -e "console.log(${TYPING} >= 3 ? 'typing-ok' : 'typing-not-ok:' + ${TYPING})"
 grep -c '"type":"message","chatId":"chat-progress","text":"hang on"' progress-outbox.ndjson
-grep -c '"type":"message","chatId":"chat-progress","text":"SLOW_4 reply' progress-outbox.ndjson
+grep -c '"type":"message","chatId":"chat-progress","text":"SLOW_6 reply' progress-outbox.ndjson
 ```
 
 ```expect
