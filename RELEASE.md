@@ -1,5 +1,30 @@
 # Release Notes
 
+## 0.2.6
+
+Fixes the lease-renew heartbeat occasionally missing its window on a short
+`queue.visibility`, which could redeliver a still-processing message to a
+second worker mid-run.
+
+- **Immediate first renew.** `startRenewHeartbeat` now renews right after
+  the lease is acquired, not only after waiting out a full interval — the
+  gap between leasing a message and the first renew is never a full
+  interval wide.
+- **Quick retry on a failed renew.** A renew that fails is retried quickly
+  (up to 3 times, about a second apart) instead of waiting for the next
+  normal interval, which on a short visibility was most of the way to
+  losing the lease outright.
+- **Documented minimum visibility.** `queue.visibility` below ~10 seconds
+  logs a warning — every renew spawns a process (and, for `--provider
+  sqs`/`cloud`, a further dispatcher + provider + `aws` CLI chain
+  underneath it), so a very short visibility leaves little margin for a
+  slow renew under load. The configured value is never silently changed.
+- Added `test/worker-renew-heartbeat.test.js` (`node --test`), proving the
+  first renew fires before any interval could have elapsed and that a
+  failed renew retries quickly. All 47 `.test.md` integration tests
+  (including the existing long-running-brain renew scenario) pass
+  unmodified.
+
 ## 0.2.5
 
 BOT-012 part B: persistent message log, ad hoc sends, keep-alive typing +
