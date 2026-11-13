@@ -1,5 +1,18 @@
 # Release Notes
 
+## 0.2.7
+
+Fixes two regressions in the 0.2.6 renew heartbeat that made sqs/cloud leases
+expire mid-run and stalled dead-lettering.
+
+- **Fixed cadence.** The next renew is scheduled from the start of the
+  previous one, not its end. A renew on sqs/cloud can take seconds, so
+  waiting a full interval after it finished stretched the gap past the
+  lease's own visibility and let a second worker take the message.
+- **No renew after ack/nack.** `stop()` now waits for a renew that is already
+  running before the worker acks or nacks. A late renew used to re-hide a
+  just-nacked sqs message, delaying its retry and its move to the DLQ.
+
 ## 0.2.6
 
 Fixes the lease-renew heartbeat occasionally missing its window on a short

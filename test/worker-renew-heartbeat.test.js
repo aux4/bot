@@ -68,3 +68,40 @@ test("startRenewHeartbeat warns but does not change the configured visibility be
 
   heartbeat.stop();
 });
+
+test("startRenewHeartbeat keeps its cadence from the START of each renew, even when a renew is slow", async () => {
+  const starts = [];
+  const queue = { name: "q", visibility: "2" }; // interval = 1000ms (floor)
+  const lease = { leaseId: "lease-cadence" };
+
+  // Each renew takes 800ms. Measured from the end of each renew, the gap
+  // between starts would be ~1800ms; measured from the start it is ~1000ms.
+  const renewFn = async () => {
+    starts.push(Date.now());
+    await new Promise(resolve => setTimeout(resolve, 800));
+  };
+
+  const heartbeat = startRenewHeartbeat("memory", queue, lease, renewFn);
+  await new Promise(resolve => setTimeout(resolve, 2300));
+  await heartbeat.stop();
+
+  assert.ok(starts.length >= 3, `expected at least 3 renews in 2.3s, got ${starts.length}`);
+  const gap = starts[1] - starts[0];
+  assert.ok(gap < 1400, `expected ~1000ms between renew starts, got ${gap}ms`);
+});
+
+test("startRenewHeartbeat stop() waits for a renew already in flight", async () => {
+  let finished = false;
+  const queue = { name: "q", visibility: "30" };
+  const lease = { leaseId: "lease-inflight" };
+
+  const renewFn = async () => {
+    await new Promise(resolve => setTimeout(resolve, 300));
+    finished = true;
+  };
+
+  const heartbeat = startRenewHeartbeat("memory", queue, lease, renewFn);
+  await heartbeat.stop();
+
+  assert.equal(finished, true, "stop() must not resolve before the in-flight renew settles (it would land after ack/nack)");
+});
