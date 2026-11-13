@@ -185,7 +185,21 @@ api:
 **Long-running brains:** while the brain runs, `--mode pull` renews the
 lease every half of `queue.visibility` via `aux4 queue renew` — a brain
 that legitimately runs longer than `queue.visibility` is no longer
-redelivered to a second worker mid-run. `brainTimeout` is unset by default
+redelivered to a second worker mid-run. The first renew fires immediately
+when the lease is acquired, not after waiting a full interval, so the gap
+between leasing a message and the first renew is never a full interval
+wide. A renew that fails (a transient error from the queue provider) is
+retried quickly (up to 3 times, about a second apart) instead of waiting
+for the next normal interval before trying again.
+
+**Note:** every renew spawns a process (`aux4 queue renew`, and for
+`--provider sqs`/`cloud` a further dispatcher + provider + `aws` CLI chain
+underneath it). `queue.visibility` below ~10 seconds is risky — a renew
+that takes longer than expected under load has very little margin before
+the lease expires on its own, even with the immediate-renew and quick-retry
+behavior above; a worker logs a warning when `queue.visibility` is set
+below this. Prefer a visibility of 10 seconds or more for any queue a
+`--mode pull` worker leases from. `brainTimeout` is unset by default
 (unbounded); set it to cap a brain that may hang instead of just running
 long.
 
