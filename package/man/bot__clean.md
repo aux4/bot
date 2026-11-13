@@ -2,7 +2,8 @@
 
 `clean` removes every expired record (ttl in the past) from every repository
 table the configured database holds — the inbound event dedupe claims, the
-reply-once guards, the sliding-ttl conversation state, and any
+reply-once guards, the sliding-ttl conversation state, the persistent
+message log (`bot.messageLogTtl`, see `bot__conversations.md`), and any
 `installations` rows a channel plugin keeps for its own OAuth/install
 bookkeeping. It is a thin wrapper over `aux4 repository clean --db <db>`,
 which sweeps all tables in one call.
@@ -28,5 +29,6 @@ aux4 bot clean --configFile config.yaml --config bot
 ```text
 events: 3 expired records removed
 conversations: 1 expired records removed
+messages: 42 expired records removed
 installations: 0 expired records removed
 ```

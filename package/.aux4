@@ -323,6 +323,112 @@
           }
         },
         {
+          "name": "send",
+          "execute": [
+            "node ${packageDir}/lib/bot.mjs send values(botId, to, text, bots, defaults, db)"
+          ],
+          "help": {
+            "text": "Send an ad hoc, proactive message to a chat -- NOT tied to an inbound event -- through the bot's own channel plugin (read from bots.<botId>.channel), format then send. Logged as outbound in the message log on success. A plugin may refuse instead of sending (e.g. WhatsApp outside its 24h free-form session window, pointing at 'send-template') -- this command fails loudly (stderr + exit 1) on a refusal or a send error, unlike the worker's own best-effort reply",
+            "variables": [
+              {
+                "name": "botId",
+                "text": "Bot id, as configured under bots.<id>",
+                "arg": true
+              },
+              {
+                "name": "to",
+                "text": "Destination chat id"
+              },
+              {
+                "name": "text",
+                "text": "Markdown text to send"
+              },
+              {
+                "name": "bots",
+                "text": "Map of botId -> per-bot config (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "defaults",
+                "text": "Shared defaults merged under every bot (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "db",
+                "text": "Repository database for bot state (message log)",
+                "default": ".bot/state.db"
+              }
+            ]
+          }
+        },
+        {
+          "name": "conversations",
+          "execute": [
+            "node ${packageDir}/lib/bot.mjs conversations values(botId, channel, db, limit)"
+          ],
+          "help": {
+            "text": "List a bot's most recently active chats from the persistent message log: chatId, user, last message, and time, one entry per distinct chat, newest first",
+            "variables": [
+              {
+                "name": "botId",
+                "text": "Bot id, as configured under bots.<id>",
+                "arg": true
+              },
+              {
+                "name": "channel",
+                "text": "Narrow to one channel plugin (default: every channel this bot has logged messages on)",
+                "default": ""
+              },
+              {
+                "name": "db",
+                "text": "Repository database for bot state (message log)",
+                "default": ".bot/state.db"
+              },
+              {
+                "name": "limit",
+                "text": "Maximum number of chats to return",
+                "default": "20"
+              }
+            ]
+          }
+        },
+        {
+          "name": "messages",
+          "execute": [
+            "node ${packageDir}/lib/bot.mjs messages values(botId, chat, channel, db, limit)"
+          ],
+          "help": {
+            "text": "List message history for one chat, both directions (inbound and outbound), oldest first, from the persistent message log",
+            "variables": [
+              {
+                "name": "botId",
+                "text": "Bot id, as configured under bots.<id>",
+                "arg": true
+              },
+              {
+                "name": "chat",
+                "text": "Chat id to show history for",
+                "default": ""
+              },
+              {
+                "name": "channel",
+                "text": "Narrow to one channel plugin (default: every channel this bot has logged messages on)",
+                "default": ""
+              },
+              {
+                "name": "db",
+                "text": "Repository database for bot state (message log)",
+                "default": ".bot/state.db"
+              },
+              {
+                "name": "limit",
+                "text": "Maximum number of messages to return",
+                "default": "50"
+              }
+            ]
+          }
+        },
+        {
           "name": "echo",
           "execute": [
             "profile:bot:echo"

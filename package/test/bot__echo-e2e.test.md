@@ -45,12 +45,27 @@ config:
         secret: testsecret
         outbox: "test-outbox.ndjson"
         command: "node brain.js"
+      progressbot:
+        channel: echo
+        secret: testsecret
+        outbox: "progress-outbox.ndjson"
+        command: "node brain.js"
+        typingInterval: 1
+        progressMessage: "hang on"
+        progressMessageDelay: 1
+      hookbot:
+        channel: echo
+        secret: testsecret
+        outbox: "hook-outbox.ndjson"
+        command: "node brain.js"
+        onMessage: "node onmessage-hook.js"
 ```
 
 ```afterAll
 aux4 api stop 2>/dev/null
 aux4 queue stop --port 18741 2>/dev/null
 rm -f test-bot-state.db test-outbox.ndjson queue.log api.log worker.log .queue.db brain.js
+rm -f progress-outbox.ndjson hook-outbox.ndjson onmessage-hook.js onmessage.ndjson
 rm -f .brain-marker-* e2e-sig*.txt e2e-body*.json
 rm -rf test-bot-tmp .tmp
 pkill -f "bot worker" 2>/dev/null
@@ -102,6 +117,10 @@ async function main() {
   if (text.startsWith("SLOW_")) {
     const seconds = Number(text.split("_")[1]) || 5;
     await new Promise(r => setTimeout(r, seconds * 1000));
+  }
+
+  if (text.startsWith("EMPTY_")) {
+    process.exit(0);
   }
 
   console.log(text);
@@ -489,4 +508,122 @@ rm -f e2e-sig2.txt e2e-body2.json
 
 ```expect:partial
 HTTP:200**{"type":"typing","chatId":"chat-2"}**{"type":"message","chatId":"chat-2","text":"should retry*
+```
+
+## Empty brain output — no reply
+
+### an empty answer is acked and logged, but nothing is sent to the chat
+
+```execute
+rm -f test-outbox.ndjson
+node -e '
+const c = require("crypto");
+const body = JSON.stringify({ events: [{ id: "evt-empty-1", chatId: "chat-empty", text: "EMPTY_please" }] });
+const sig = c.createHmac("sha256", "testsecret").update(body, "utf8").digest("hex");
+require("fs").writeFileSync("e2e-body.json", body);
+console.log(sig);
+' > e2e-sig.txt
+curl -s -o /dev/null -X POST "http://localhost:18740/api/echo/support/webhook" -H "Content-Type: application/json" -H "x-echo-signature: $(cat e2e-sig.txt)" --data-binary @e2e-body.json
+sleep 2.5
+rm -f e2e-sig.txt e2e-body.json
+grep -c '"type":"message"' test-outbox.ndjson || true
+aux4 bot messages support --chat chat-empty --db test-bot-state.db
+```
+
+```expect:partial
+0
+[{"direction":"in","text":"EMPTY_please"*?{"direction":"out","text":"","userId":"","kind":"no-reply","time":"*?"}]
+```
+
+## Per-bot onMessage hook — independent of the reply
+
+### the hook fires for every inbound message and never blocks a successful reply
+
+```execute
+rm -f hook-outbox.ndjson onmessage.ndjson
+cat > onmessage-hook.js <<'HOOKEOF'
+import fs from "fs";
+let data = "";
+process.stdin.on("data", d => (data += d));
+process.stdin.on("end", () => {
+  const msg = JSON.parse(data || "{}");
+  fs.appendFileSync("onmessage.ndjson", JSON.stringify(msg) + "\n");
+  if ((msg.event && msg.event.text) === "HOOKFAIL boom") {
+    process.exit(1);
+  }
+  process.exit(0);
+});
+HOOKEOF
+node -e '
+const c = require("crypto");
+const body = JSON.stringify({ events: [{ id: "evt-hook-1", chatId: "chat-hook", text: "hello hook" }] });
+const sig = c.createHmac("sha256", "testsecret").update(body, "utf8").digest("hex");
+require("fs").writeFileSync("e2e-body.json", body);
+console.log(sig);
+' > e2e-sig.txt
+curl -s -o /dev/null -X POST "http://localhost:18740/api/echo/hookbot/webhook" -H "Content-Type: application/json" -H "x-echo-signature: $(cat e2e-sig.txt)" --data-binary @e2e-body.json
+sleep 2.5
+rm -f e2e-sig.txt e2e-body.json
+grep -c '"text":"hello hook"' onmessage.ndjson
+grep -c '"type":"message","chatId":"chat-hook","text":"hello hook' hook-outbox.ndjson
+```
+
+```expect
+1
+1
+```
+
+### a failing hook is logged but never blocks or delays the reply
+
+```execute
+rm -f hook-outbox.ndjson onmessage.ndjson
+node -e '
+const c = require("crypto");
+const body = JSON.stringify({ events: [{ id: "evt-hook-2", chatId: "chat-hook-fail", text: "HOOKFAIL boom" }] });
+const sig = c.createHmac("sha256", "testsecret").update(body, "utf8").digest("hex");
+require("fs").writeFileSync("e2e-body.json", body);
+console.log(sig);
+' > e2e-sig.txt
+curl -s -o /dev/null -X POST "http://localhost:18740/api/echo/hookbot/webhook" -H "Content-Type: application/json" -H "x-echo-signature: $(cat e2e-sig.txt)" --data-binary @e2e-body.json
+sleep 2.5
+rm -f e2e-sig.txt e2e-body.json
+grep -c '"text":"HOOKFAIL boom"' onmessage.ndjson
+grep -c '"type":"message","chatId":"chat-hook-fail","text":"HOOKFAIL boom' hook-outbox.ndjson
+```
+
+```expect
+1
+1
+```
+
+## Keep-alive typing and an optional progressMessage
+
+### the typing indicator is re-raised periodically while a slow brain runs, and the progressMessage is sent once
+
+```timeout
+15000
+```
+
+```execute
+rm -f progress-outbox.ndjson
+node -e '
+const c = require("crypto");
+const body = JSON.stringify({ events: [{ id: "evt-progress-1", chatId: "chat-progress", text: "SLOW_4 reply" }] });
+const sig = c.createHmac("sha256", "testsecret").update(body, "utf8").digest("hex");
+require("fs").writeFileSync("e2e-body.json", body);
+console.log(sig);
+' > e2e-sig.txt
+curl -s -o /dev/null -X POST "http://localhost:18740/api/echo/progressbot/webhook" -H "Content-Type: application/json" -H "x-echo-signature: $(cat e2e-sig.txt)" --data-binary @e2e-body.json
+sleep 6
+rm -f e2e-sig.txt e2e-body.json
+TYPING=$(grep -c '"type":"typing","chatId":"chat-progress"' progress-outbox.ndjson)
+node -e "console.log(${TYPING} >= 3 ? 'typing-ok' : 'typing-not-ok:' + ${TYPING})"
+grep -c '"type":"message","chatId":"chat-progress","text":"hang on"' progress-outbox.ndjson
+grep -c '"type":"message","chatId":"chat-progress","text":"SLOW_4 reply' progress-outbox.ndjson
+```
+
+```expect
+typing-ok
+1
+1
 ```

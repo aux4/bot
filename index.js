@@ -2,6 +2,8 @@ import { verify } from "./lib/verify.js";
 import { ingestPrepare, ingestSend, ingestReply } from "./lib/ingest.js";
 import { leaseNormalize, workPullProcess, workPush } from "./lib/worker.js";
 import { clean } from "./lib/clean.js";
+import { sendCommand } from "./lib/send.js";
+import { conversationsAction, messagesAction } from "./lib/messagelog.js";
 import * as echo from "./lib/echo.js";
 
 (async () => {
@@ -32,6 +34,15 @@ import * as echo from "./lib/echo.js";
         break;
       case "clean":
         await clean(args);
+        break;
+      case "send":
+        await sendCommand(args);
+        break;
+      case "conversations":
+        await conversationsAction(args);
+        break;
+      case "messages":
+        await messagesAction(args);
         break;
       case "echo-verify":
         await echo.verify();

@@ -1,5 +1,43 @@
 # Release Notes
 
+## 0.2.5
+
+BOT-012 part B: persistent message log, ad hoc sends, keep-alive typing +
+progressMessage, a per-bot `onMessage` hook, and empty-brain-output = no
+reply.
+
+- **Persistent message log.** Every inbound and outbound message is
+  written to a `messages` repository table in the same `--db` as the rest
+  of the bot's state. Retention is per-bot: `bot.messageLogTtl` (default
+  2592000s / 30 days; `"off"` disables logging for that bot). Browse it
+  with two new read-only commands: `aux4 bot conversations <botId>`
+  (recent chats: chatId, user, last message, time) and `aux4 bot messages
+  <botId> --chat <chatId>` (full history, both directions, oldest first).
+  Expired entries are swept by `aux4 bot clean`, same as every other table.
+- **`aux4 bot send <botId> --to <chatId> --text <text>`** — an ad hoc,
+  proactive message, not tied to an inbound event. Formats + sends through
+  the bot's own channel plugin (channel resolved from `bots.<botId>.channel`
+  — only `botId` is positional, since aux4 core does not reliably bind two
+  positional `arg: true` variables on one command), logs as outbound on
+  success. A plugin may refuse (returning `{ok:false, error}`, e.g.
+  WhatsApp outside its 24h free-form session window — see aux4/bot-meta)
+  instead of sending; `send` fails loudly (stderr + exit 1) on a refusal or
+  a send error, unlike the worker's own best-effort reply send.
+- **Empty brain output = no reply.** If the brain's answer is empty or
+  whitespace-only, nothing is sent — the message still acks normally, and
+  the attempt is logged as a `no-reply` entry instead of a sent message.
+- **Per-bot `onMessage` hook.** `bot.onMessage`, when set, is a command run
+  for every inbound message (the message JSON on stdin), independent of the
+  reply — fire-and-forget, never awaited on the reply's critical path, so
+  its failure never blocks or delays the reply.
+- **Keep-alive typing + optional progressMessage.** While the brain runs,
+  the plugin's `typing` indicator is re-raised every `bot.typingInterval`
+  seconds (default 20; `0` disables). If `bot.progressMessage` is set, it
+  is sent once (and logged) after `bot.progressMessageDelay` seconds
+  (default 15) if the brain is still running by then.
+- `brainTimeout` stays optional and unset by default (unbounded) — no
+  change from BOT-012A/REWORK; explicitly re-verified as part of this item.
+
 ## 0.2.2
 
 BOT-012 (REWORK of BOT-012A): removes the remaining shell scripting from

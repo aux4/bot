@@ -115,6 +115,11 @@ config:
       brainTimeout: ""                  # brain command timeout (ms); unset = unbounded (see "Long-running brains")
       historyMaxTurns: 20               # cap conversation history passed to the brain
       failureMessage: "Sorry — I hit an error handling that request."  # sent once, on the final failed attempt, before dead-lettering
+      messageLogTtl: 2592000            # message log retention (seconds); default 30 days; "off" disables logging (see "Message log")
+      typingInterval: 20                # keep-alive: re-raise typing every N seconds while the brain runs; 0 disables
+      progressMessage: ""               # optional message sent once if the brain is still running after progressMessageDelay
+      progressMessageDelay: 15          # seconds to wait before sending progressMessage
+      onMessage: ""                     # optional command run for every inbound message, independent of the reply (see "onMessage hook")
 
     bots:
       support:
@@ -232,6 +237,101 @@ in-process retry/backoff anymore (there was, before durable queueing); a
 message that keeps failing no longer gets a `failureMessage` reply either —
 see Known limitations.
 
+**Empty brain output means no reply.** If the brain's answer is empty or
+whitespace-only, nothing is sent to the chat — the message still acks
+normally (this is not a failure), and the attempt is logged in the message
+log as a `no-reply` entry instead of a sent message. Useful for a brain
+that deliberately stays silent on some inputs (e.g. a message it decides
+not to answer).
+
+## Keep-alive typing and progressMessage
+
+While the brain runs, the plugin's `typing` indicator is re-raised every
+`typingInterval` seconds (default `20`) — a single typing call at the start
+goes stale on most platforms well before a slow brain finishes. Set
+`typingInterval: 0` to disable.
+
+```yaml
+bots:
+  support:
+    typingInterval: 20       # default: 20 (seconds); 0 disables
+    progressMessage: ""      # optional; sent once if the brain is still running
+    progressMessageDelay: 15 # seconds to wait before sending progressMessage; default: 15
+```
+
+If `progressMessage` is set, it is sent once (via the plugin's `send`,
+then logged in the message log) after `progressMessageDelay` seconds,
+**only if the brain is still running by then** — a brain that finishes
+first never triggers it. Useful for a brain that legitimately takes a
+while and a typing indicator alone isn't reassuring enough.
+
+## Per-bot onMessage hook
+
+`bot.onMessage`, when set, is a command run for **every** inbound message
+— independent of the reply. The full `{channel, botId, event}` message is
+written to its stdin as JSON.
+
+```yaml
+bots:
+  support:
+    onMessage: "aux4 my-analytics log-inbound"
+```
+
+It runs fire-and-forget: it is never awaited on the reply's critical path,
+so a slow or failing hook (non-zero exit) never delays, blocks, or nacks
+the reply. Its failure is logged, nothing more. Use it for side effects
+that must see every inbound message regardless of how (or whether) the bot
+replies — analytics, audit logging, triggering an external workflow — not
+for anything the reply itself depends on.
+
+## Message log
+
+Every inbound and outbound message — including a `no-reply` entry for an
+empty brain output, a `progress` entry for a sent `progressMessage`, and a
+`manual` entry for an `aux4 bot send` — is written to a persistent message
+log in the same repository `--db` as the rest of aux4/bot's state.
+Retention is per-bot:
+
+```yaml
+bots:
+  support:
+    messageLogTtl: 2592000   # default: 2592000 (30 days), in seconds; "off" disables logging entirely
+```
+
+Browse it with two read-only commands:
+
+```bash
+# recent chats: chatId, user, last message, time — newest first
+aux4 bot conversations support --configFile config.yaml --config bot
+
+# full history for one chat, both directions, oldest first
+aux4 bot messages support --chat 15551234567 --configFile config.yaml --config bot
+```
+
+Expired entries (past `messageLogTtl`) are swept by `aux4 bot clean`, same
+as every other repository table this package manages.
+
+## Sending an ad hoc message
+
+`aux4 bot send` sends a message that is **not** a reply to an inbound
+event — a proactive notification, for example:
+
+```bash
+aux4 bot send support --to 15551234567 --text "Your order has shipped!" --configFile config.yaml --config bot
+```
+
+It resolves the bot's own channel from `bots.<botId>.channel`, runs the
+text through that channel plugin's `format` then `send`, and logs it as
+outbound in the message log on success. A plugin may refuse instead of
+sending — for example, WhatsApp's Cloud API only allows a free-form message
+within 24 hours of the user's last message; outside that window the
+WhatsApp plugin (see
+[aux4/bot-meta](https://hub.aux4.io/r/public/packages/aux4/bot-meta))
+refuses with a clear error pointing at `aux4 bot whatsapp send-template`
+instead. Either way, `send` fails loudly (stderr + exit `1`) — unlike the
+worker's own best-effort reply send — because here something is directly
+waiting on the result.
+
 ## Writing a channel plugin
 
 A channel plugin is any installed aux4 package that adds a `<channel>`
@@ -258,7 +358,7 @@ body, a plain string) to stdout.
 | `typing` | `bot worker` (at the start of handling an event) | `{event, bot}` | `{ok}` (best-effort; errors are logged, not fatal) |
 | `download` | `bot worker` (once per attached file) | `{file, bot, tmpDir}` | `{path}` (local filesystem path) |
 | `format` | `bot worker` (before `send`) | `{markdown, bot}` | `{text}` |
-| `send` | `bot worker` | `{chatId, threadId, text, bot}` | `{ok}` |
+| `send` | `bot worker`, `bot send` | `{chatId, threadId, text, bot}` | `{ok}`, or `{ok:false, error}` to refuse (see below) |
 
 Notes:
 
@@ -283,6 +383,11 @@ Notes:
   repository table (`aux4 repository write/read/claim --repository
   installations --db <the same db>`) — the core creates and sweeps it but
   never interprets its contents.
+- **`send` may refuse** by returning `{ok:false, error:"<reason>"}` instead
+  of throwing, when the platform itself would reject the message for a
+  reason the caller should see (e.g. WhatsApp's 24h free-form session
+  window). `bot worker`'s own best-effort reply send just logs the refusal
+  and moves on; `aux4 bot send` surfaces `error` to stderr and exits `1`.
 
 ## Example: the `echo` reference plugin
 
@@ -322,8 +427,9 @@ same as aux4/slackbot's `clean`.
 - **No dead-letter notification hook.** `failureMessage` is sent once, on
   the final failed attempt, right before the message is dead-lettered —
   but there is no further notification once it actually reaches `aux4
-  queue dlq` (e.g. an `onMessage`/dead-letter webhook to alert an operator).
-  Tracked separately.
+  queue dlq` (e.g. a webhook to alert an operator). `onMessage` fires on
+  *inbound* messages only, not on dead-lettering — a dedicated
+  dead-letter hook is tracked separately.
 - **Additional providers are separate packages.** `queue.provider: "sqs"` (or
   `"cloud"`) works once [aux4/queue-sqs](https://hub.aux4.io/r/public/packages/aux4/queue-sqs)
   (or [aux4/queue-cloud](https://hub.aux4.io/r/public/packages/aux4/queue-cloud)) is installed
