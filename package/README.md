@@ -96,7 +96,7 @@ config:
   bot:
     # shared infrastructure (one api / queue / worker for every channel+bot)
     channels: ["echo"]                 # allowlist — a {channel} path segment not in this list 404s
-    db: "./.bot/state.db"               # repository sqlite file (dedupe + reply-once + conversations + installations)
+    db: "./.bot/state.db"               # repository sqlite file, a libsql:// URL, or the literal "cloud" (dedupe + reply-once + conversations + installations)
     tmpDir: "./.bot/tmp"                # worker's attachment download scratch space
     dedupeTtl: 300                      # fallback event-dedupe window (seconds) when a plugin event has no ttl
     queue:                              # work-queue config — see "Work queue config" below
@@ -151,12 +151,22 @@ is just installing that plugin — no change to this package.
 queue:
   provider: "memory"      # memory, repository, sqs, cloud, or any other installed aux4/queue-<provider> plugin
   name: "bot-inbox"       # queue name — dashes/dots are fine under memory/repository (aux4/queue >=0.2.3)
-  db: ".bot/queue.db"     # repository provider only — sqlite path or libsql:// URL
+  db: ".bot/queue.db"     # repository provider only — sqlite path, libsql:// URL, or the literal "cloud"
   visibility: "30"        # lease visibility timeout, seconds
   maxAttempts: "5"        # nacks before a message is dead-lettered (0 = unlimited; ignored by some providers)
   port: "8420"            # memory provider only
   token: ""               # memory provider only
 ```
+
+**`db: "cloud"` (bot state and `--provider repository`'s `db`):** the
+literal value `cloud` is not a local file — it resolves to the Turso
+database that the aux4.cloud `turso:database` capability already provides
+to this machine (via `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN`), the same
+value accepted by [aux4/repository](https://hub.aux4.io/r/public/packages/aux4/repository)'s
+own `--db`. Nothing in this package's code branches on `cloud` specifically
+— `db` is forwarded as-is to `aux4 repository`/`aux4 queue`, which is what
+actually resolves it. Using it without that environment set up fails fast
+with a clear error instead of silently writing to a local file.
 
 **Backward compatibility (one version):** the pre-0.2.0 shape
 `queue: {command: "queue", storage: "memory"}` (or `command: "queue-sqs"`)

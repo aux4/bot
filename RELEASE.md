@@ -1,5 +1,14 @@
 # Release Notes
 
+## 0.2.9
+
+- **`db: "cloud"` works for bot state and `--provider repository`'s queue
+  `db`.** The literal value `cloud` resolves to the Turso database the
+  aux4.cloud `turso:database` capability already provides to this machine
+  (via `TURSO_DATABASE_URL`/`TURSO_AUTH_TOKEN`), exactly the value
+  aux4/repository's own `--db` now accepts. No code change in this package
+  — `db` was already forwarded as-is to `aux4 repository`/`aux4 queue`.
+
 ## 0.2.7
 
 Fixes two regressions in the 0.2.6 renew heartbeat that made sqs/cloud leases
