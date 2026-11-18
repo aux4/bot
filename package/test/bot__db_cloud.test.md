@@ -77,7 +77,7 @@ true
 ```
 
 ```execute
-if [ -z "$TURSO_CLOUD_TEST_URL" ]; then printf 'hs-cloud-123**HTTP:200**{\"type\":\"typing\",\"chatId\":\"chat-cloud-1\"}**{\"type\":\"message\",\"chatId\":\"chat-cloud-1\",\"text\":\"hello cloud**bot_cloud_test_messages**events**\n'; exit 0; fi
+if [ -z "$TURSO_CLOUD_TEST_URL" ]; then printf 'hs-cloud-123**HTTP:200**{"type":"typing","chatId":"chat-cloud-1"}**{"type":"message","chatId":"chat-cloud-1","text":"hello cloud**bot_cloud_test_messages**events**\n'; exit 0; fi
 export TURSO_DATABASE_URL="$TURSO_CLOUD_TEST_URL"
 export TURSO_AUTH_TOKEN="$TURSO_CLOUD_TEST_TOKEN"
 aux4 repository truncate events --db cloud --yes >/dev/null 2>&1 || true
