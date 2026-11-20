@@ -286,8 +286,9 @@ provider retry window does not cause the model to run again after the normal
 reply ttl. A crash after the provider accepts a reply but before the durable
 request status is written is intentionally at-most-once: the reply claim
 prevents a second send, and a later callback is reported as in progress rather
-than falsely acknowledged as completed. Operators can inspect and reconcile
-that request from the repository log.
+than falsely acknowledged as completed. The claim is retained even when the
+provider call throws because a timeout may follow provider acceptance;
+operators can inspect and reconcile that request from the repository log.
 
 **Empty brain output means no reply.** If the brain's answer is empty or
 whitespace-only, nothing is sent to the chat — the message still acks

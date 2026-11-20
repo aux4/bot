@@ -78,15 +78,12 @@ test("unknown and mismatched correlations are rejected before send", async () =>
   assert.equal(h.sent.length, 0);
 });
 
-test("claim failure is fail-closed and provider failure releases the claim", async () => {
+test("claim failure is fail-closed and provider failure keeps the claim", async () => {
   const claimFailure = harness({ claim: async () => { throw new Error("db unavailable"); } });
   await assert.rejects(() => completeRequest({ requestId, status: "completed", reply: "x" }, { ...config, db: "test", repository: claimFailure.repository }), /claim failed/);
   assert.equal(claimFailure.sent.length, 0);
 
-  let released = 0;
   const sendFailure = harness({ send: async () => { throw new Error("provider down"); } });
-  sendFailure.repository.release = async () => { released++; };
   await assert.rejects(() => completeRequest({ requestId, status: "completed", reply: "x" }, { ...config, db: "test", repository: sendFailure.repository }), /provider down/);
-  assert.equal(released, 1);
   assert.equal(sendFailure.sent.length, 0);
 });
