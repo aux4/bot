@@ -248,7 +248,11 @@ for N in 1 2; do
   ' > e2e-sig.txt
   curl -s -o /dev/null -X POST "http://localhost:18740/api/echo/support/webhook" -H "Content-Type: application/json" -H "x-echo-signature: $(cat e2e-sig.txt)" --data-binary @e2e-body.json
 done
-sleep 12
+for I in $(seq 1 30); do
+  LINES=$(grep -c '"type":"message"' test-outbox.ndjson 2>/dev/null || true)
+  if [ "$LINES" -ge 2 ]; then break; fi
+  sleep 1
+done
 rm -f e2e-sig.txt e2e-body.json
 grep '"type":"message"' test-outbox.ndjson | sed -E 's/.*"text":"([^"]*)".*/\1/' | sed -E 's/\\n$//'
 ```
