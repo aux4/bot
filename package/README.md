@@ -127,6 +127,7 @@ config:
         secret: ${ECHO_SIGNING_SECRET} # plugin-specific — the echo plugin HMACs the raw body with this
         outbox: "./.bot/echo-outbox.ndjson"  # plugin-specific — where the echo plugin "delivers" replies
         command: "cat"                 # the brain: any CLI, text in -> markdown out
+        # replyMode: callback           # optional: brain completes with `aux4 bot complete`; stdout is ignored
 ```
 
 Fields under a bot entry besides `channel` and `command` are **opaque to the
@@ -260,6 +261,22 @@ and `queue.maxAttempts` dead-letters it after repeated failures. There is no
 in-process retry/backoff anymore (there was, before durable queueing); a
 message that keeps failing no longer gets a `failureMessage` reply either —
 see Known limitations.
+
+### Callback reply mode
+
+Set `replyMode: callback` for a generic remote agent brain. Before starting
+the brain, the worker stores an opaque request id and the channel, bot, chat,
+thread, message, and conversation correlation in the bot database. The brain
+receives stable `AUX4BOT_REQUEST_ID`, `AUX4BOT_MESSAGE_ID`, and
+`AUX4BOT_CONVERSATION_ID` environment variables. Its stdout is not delivered.
+
+The authenticated agent invokes `aux4 bot complete` with JSON on stdin, such
+as `{"requestId":"req:<opaque>","status":"completed","reply":"..."}`.
+The command resolves routing only from the stored request, formats and sends
+the reply, updates conversation/message history once, and returns a compact
+receipt. Duplicate callbacks and queue redeliveries are accepted without a
+second send. Unknown or mismatched correlations are rejected, and repository
+claim failures fail closed.
 
 **Empty brain output means no reply.** If the brain's answer is empty or
 whitespace-only, nothing is sent to the chat — the message still acks

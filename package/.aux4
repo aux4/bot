@@ -362,6 +362,39 @@
           }
         },
         {
+          "name": "complete",
+          "private": true,
+          "noHooks": true,
+          "execute": [
+            "stdin:node ${packageDir}/lib/bot.mjs complete values(channels, bots, defaults, db)"
+          ],
+          "help": {
+            "text": "Accept an authenticated agent callback and deliver the reply using the stored request routing",
+            "variables": [
+              {
+                "name": "channels",
+                "text": "Allowlisted channel names (JSON array)",
+                "default": "[]"
+              },
+              {
+                "name": "bots",
+                "text": "Map of botId -> per-bot config (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "defaults",
+                "text": "Shared defaults merged under every bot (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "db",
+                "text": "Repository database containing callback request state",
+                "default": ".bot/state.db"
+              }
+            ]
+          }
+        },
+        {
           "name": "conversations",
           "execute": [
             "node ${packageDir}/lib/bot.mjs conversations values(botId, channel, db, limit)"

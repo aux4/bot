@@ -4,6 +4,7 @@ import { leaseNormalize, workPullProcess, workPush } from "./lib/worker.js";
 import { clean } from "./lib/clean.js";
 import { sendCommand } from "./lib/send.js";
 import { conversationsAction, messagesAction } from "./lib/messagelog.js";
+import { completeCommand } from "./lib/complete.js";
 import * as echo from "./lib/echo.js";
 
 (async () => {
@@ -43,6 +44,9 @@ import * as echo from "./lib/echo.js";
         break;
       case "messages":
         await messagesAction(args);
+        break;
+      case "complete":
+        await completeCommand(args);
         break;
       case "echo-verify":
         await echo.verify();
