@@ -79,7 +79,7 @@ jobs:
         uses: aux4/action@v1
         with:
           command: test
-          build_command: npm run build
+          build_command: npm run build && npm test
 
   publish:
     needs: [lint, test-linux]
