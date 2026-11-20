@@ -112,6 +112,7 @@ config:
     defaults:
       threadTtl: 86400                  # sliding conversation-state expiry (seconds)
       replyTtl: 3600                    # reply-once guard window (seconds)
+      callbackTtl: 129600               # callback request/reply lifetime (36h); applies only to replyMode: callback
       brainTimeout: ""                  # brain command timeout (ms); unset = unbounded (see "Long-running brains")
       historyMaxTurns: 20               # cap conversation history passed to the brain
       failureMessage: "Sorry — I hit an error handling that request."  # sent once, on the final failed attempt, before dead-lettering
@@ -268,7 +269,9 @@ Set `replyMode: callback` for a generic remote agent brain. Before starting
 the brain, the worker stores an opaque request id and the channel, bot, chat,
 thread, message, and conversation correlation in the bot database. The brain
 receives stable `AUX4BOT_REQUEST_ID`, `AUX4BOT_MESSAGE_ID`, and
-`AUX4BOT_CONVERSATION_ID` environment variables. Its stdout is not delivered.
+`AUX4BOT_CONVERSATION_ID` environment variables. These are opaque identifiers;
+the conversation id is UUID-shaped and does not reveal channel, bot, or chat
+routing. Its stdout is not delivered.
 
 The authenticated agent invokes `aux4 bot complete` with JSON on stdin, such
 as `{"requestId":"req:<opaque>","status":"completed","reply":"..."}`.
@@ -277,6 +280,14 @@ the reply, updates conversation/message history once, and returns a compact
 receipt. Duplicate callbacks and queue redeliveries are accepted without a
 second send. Unknown or mismatched correlations are rejected, and repository
 claim failures fail closed.
+
+Callback requests default to a 36-hour lifetime (`callbackTtl: 129600`) so a
+provider retry window does not cause the model to run again after the normal
+reply ttl. A crash after the provider accepts a reply but before the durable
+request status is written is intentionally at-most-once: the reply claim
+prevents a second send, and a later callback is reported as in progress rather
+than falsely acknowledged as completed. Operators can inspect and reconcile
+that request from the repository log.
 
 **Empty brain output means no reply.** If the brain's answer is empty or
 whitespace-only, nothing is sent to the chat — the message still acks

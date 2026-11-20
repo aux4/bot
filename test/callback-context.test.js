@@ -12,6 +12,8 @@ test("callback request context is stable and opaque", () => {
   const second = requestContext(structuredClone(msg));
   assert.deepEqual(first, second);
   assert.match(first.requestId, /^req:[a-f0-9]{64}$/);
+  assert.equal(first.messageId, first.requestId);
+  assert.match(first.agentConversationId, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
   assert.equal(first.conversationId, "whatsapp:support:thread-1");
   assert.equal(first.chatId, "+15551234");
   assert.ok(!first.requestId.includes("provider-event-1"));
