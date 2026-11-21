@@ -177,12 +177,10 @@
           "private": true,
           "noHooks": true,
           "execute": [
-            "nout:aux4 queue lease --provider nvl(queue.provider, queue.storage, 'memory') param(queue.name:name) param(queue.db:db) param(queue.port:port) param(queue.token:token) param(queue.visibility:visibility) param(queue.maxAttempts:maxAttempts); true",
-            "json:node ${packageDir}/lib/bot.mjs lease-normalize values(response)",
-            "node ${packageDir}/lib/bot.mjs work-pull-process values(channels, bots, defaults, db, tmpDir, queue, response)"
+            "node ${packageDir}/lib/bot.mjs work-pull values(channels, bots, defaults, db, tmpDir, queue)"
           ],
           "help": {
-            "text": "Self-lease the next eligible message from the queue (one at a time per group) via the validated provider dispatch (see 'provider'), process it (renewing the lease while the brain runs), and ack on success or nack on a brain failure. The lease call is allowed to find nothing eligible (exits non-zero; the trailing ';true' is a plain unconditional sequence, not a conditional branch, so the pipeline can inspect the normalized {leased:false} result instead of the exit code) — everything past that point (the empty check, the ack/nack decision, the failureMessage reply) is decided in lib/worker.js, not here, since aux4's own templating cannot safely branch on a value that may be empty (see README)",
+            "text": "Lease and process one message through the queue provider. Only its documented empty result becomes leased:false; provider, authentication, database and malformed-response failures remain errors. The worker renews live leases and acknowledges or nacks processing as before.",
             "variables": [
               {
                 "name": "channels",
@@ -213,11 +211,6 @@
                 "name": "queue",
                 "text": "aux4/queue config: {name, provider, db, visibility, maxAttempts, port, token} (provider accepts memory|repository|sqs|cloud|... ; the old command/storage keys still work as aliases for one version)",
                 "default": "{\"provider\":\"memory\",\"name\":\"bot-inbox\",\"db\":\".bot/queue.db\",\"visibility\":\"30\",\"maxAttempts\":\"5\",\"port\":\"8420\",\"token\":\"\"}"
-              },
-              {
-                "name": "response",
-                "text": "Internal: set by this command's own pipeline (the normalized lease) — not meant to be passed in",
-                "default": "{}"
               }
             ]
           }

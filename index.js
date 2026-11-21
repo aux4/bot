@@ -1,6 +1,6 @@
 import { verify } from "./lib/verify.js";
 import { ingestPrepare, ingestSend, ingestReply } from "./lib/ingest.js";
-import { leaseNormalize, workPullProcess, workPush } from "./lib/worker.js";
+import { leaseNormalize, workPull, workPullProcess, workPush } from "./lib/worker.js";
 import { clean } from "./lib/clean.js";
 import { sendCommand } from "./lib/send.js";
 import { conversationsAction, messagesAction } from "./lib/messagelog.js";
@@ -29,6 +29,9 @@ import * as echo from "./lib/echo.js";
         break;
       case "work-pull-process":
         await workPullProcess(args);
+        break;
+      case "work-pull":
+        await workPull(args);
         break;
       case "work-push":
         await workPush(args);

@@ -99,3 +99,9 @@ aux4 bot work --mode pull --configFile config.yaml --config bot
 ```text
 {"leased":false}
 ```
+
+Queue leasing distinguishes an empty queue from an execution failure. The
+provider’s documented exit-4 empty response returns `{"leased":false}`.
+Authentication, connection, database and malformed-response errors fail the
+command; they are not reported as an empty queue. Diagnostics omit provider
+credentials and response bodies. This does not add an automatic retry scheduler.
