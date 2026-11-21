@@ -497,3 +497,15 @@ provider’s documented exit-4 empty response returns `{"leased":false}`.
 Authentication, connection, database and malformed-response errors fail the
 command; they are not reported as an empty queue. Diagnostics omit provider
 credentials and response bodies. This does not add an automatic retry scheduler.
+
+## Bounded retries in one invocation
+
+`aux4 bot retry-work` drains queued work through existing leases, ack/nack and
+reply deduplication. Default backoff is 1, 2, 4, 8, then 15 seconds, up to six
+consecutive failed or unexpectedly empty attempts. Pass `--expected` from the
+`enqueued` metadata returned by `bot ingest` to protect newly queued work.
+
+Persisted queue `maxAttempts` still controls dead-letter eligibility. Retry,
+time and message limits return failure explicitly. The time budget stops new
+attempts; in-flight work retains its configured timeout. This is not a daemon
+or scheduler and cannot recover after process or VM termination.

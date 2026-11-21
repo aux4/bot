@@ -5,6 +5,7 @@ import { clean } from "./lib/clean.js";
 import { sendCommand } from "./lib/send.js";
 import { conversationsAction, messagesAction } from "./lib/messagelog.js";
 import { completeCommand } from "./lib/complete.js";
+import { workRetry } from "./lib/retry.js";
 import * as echo from "./lib/echo.js";
 
 (async () => {
@@ -32,6 +33,9 @@ import * as echo from "./lib/echo.js";
         break;
       case "work-pull":
         await workPull(args);
+        break;
+      case "work-retry":
+        await workRetry(args);
         break;
       case "work-push":
         await workPush(args);

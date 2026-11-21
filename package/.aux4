@@ -173,6 +173,78 @@
           }
         },
         {
+          "name": "retry-work",
+          "noHooks": true,
+          "execute": [
+            "node ${packageDir}/lib/bot.mjs work-retry values(channels, bots, defaults, db, tmpDir, queue, expected, attempts, delay, maxDelay, budget, maxMessages)"
+          ],
+          "help": {
+            "text": "Drain queued work with bounded retries, exponential backoff and existing lease/dedupe protection",
+            "variables": [
+              {
+                "name": "channels",
+                "text": "Allowlisted channel names (JSON array)",
+                "default": "[]"
+              },
+              {
+                "name": "bots",
+                "text": "Map of botId -> per-bot config (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "defaults",
+                "text": "Shared defaults merged under every bot (JSON object)",
+                "default": "{}"
+              },
+              {
+                "name": "db",
+                "text": "Repository database for bot state (local sqlite path or libsql:// URL)",
+                "default": ".bot/state.db"
+              },
+              {
+                "name": "tmpDir",
+                "text": "Working directory for downloaded attachments",
+                "default": ".bot/tmp"
+              },
+              {
+                "name": "queue",
+                "text": "aux4/queue config: {name, provider, db, visibility, maxAttempts, port, token} (provider accepts memory|repository|sqs|cloud|... ; the old command/storage keys still work as aliases for one version)",
+                "default": "{\"provider\":\"memory\",\"name\":\"bot-inbox\",\"db\":\".bot/queue.db\",\"visibility\":\"30\",\"maxAttempts\":\"5\",\"port\":\"8420\",\"token\":\"\"}"
+              },
+              {
+                "name": "expected",
+                "text": "New messages enqueued by this delivery; retry an empty lease until these are processed",
+                "default": "0"
+              },
+              {
+                "name": "attempts",
+                "text": "Maximum consecutive failed or unexpectedly empty attempts (1-10)",
+                "default": "6"
+              },
+              {
+                "name": "delay",
+                "text": "Initial retry delay in milliseconds",
+                "default": "1000"
+              },
+              {
+                "name": "maxDelay",
+                "text": "Maximum retry delay in milliseconds",
+                "default": "15000"
+              },
+              {
+                "name": "budget",
+                "text": "Time budget in milliseconds for starting attempts; an in-flight attempt retains its configured timeout",
+                "default": "240000"
+              },
+              {
+                "name": "maxMessages",
+                "text": "Maximum messages to acknowledge in this invocation",
+                "default": "100"
+              }
+            ]
+          }
+        },
+        {
           "name": "pull",
           "private": true,
           "noHooks": true,

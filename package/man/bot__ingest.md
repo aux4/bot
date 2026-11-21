@@ -60,3 +60,8 @@ POST /api/echo/support/webhook  (valid signature, new event id)  ->  200 {}
 POST /api/echo/support/webhook  (same event id again)             ->  200 {}  (skipped, not re-enqueued)
 POST /api/echo/support/webhook  (invalid signature)                ->  401
 ```
+
+The CLI response envelope includes `enqueued`, the number of events successfully
+added to the queue. This metadata is outside the HTTP `body`; HTTP status/body
+semantics are unchanged. Pass it to `bot retry-work --expected` to protect newly
+queued messages from an unexpectedly empty first lease.
