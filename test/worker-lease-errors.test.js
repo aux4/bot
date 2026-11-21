@@ -49,4 +49,9 @@ test("valid leases and provider dispatch keep their existing shape", async () =>
     assert.deepEqual(lease.body, { event: {} });
   }
   for (const output of ["[]", "{}"]) assert.equal((await leaseNext(queue, async () => output)).id, "");
+  await leaseNext({ ...queue, visibility: 0, maxAttempts: 0 }, async (_provider, _operation, flags) => {
+    assert.equal(flags.visibility, 0);
+    assert.equal(flags.maxAttempts, 0);
+    return "[]";
+  });
 });
