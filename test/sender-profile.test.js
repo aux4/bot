@@ -12,3 +12,10 @@ test("profile changes preserve the conversation and dedupe identities", () => {
   const msg = {channel:"whatsapp",botId:"support",event:{key:"evt",chatId:"chat",sender:{displayName:"Ada"}}};
   assert.deepEqual(requestContext(msg),requestContext({...msg,event:{...msg.event,sender:{displayName:"Grace"}}}));
 });
+
+
+
+test("opaque participant ID survives without introducing identity authority",()=>{
+  assert.deepEqual(senderProfile({displayName:"Alice",id:"a".repeat(64),token:"private",role:"owner"}),{displayName:"Alice",id:"a".repeat(64)});
+  assert.equal(senderProfile({displayName:"Alice",id:"phone-or-email"}).id,undefined);
+});

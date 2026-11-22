@@ -522,3 +522,5 @@ is written after confirmed provider acceptance, so a failed send remains retryab
 Default provider behavior is unchanged. The brain also receives `AUX4BOT_EVENT_ID`.
 Provider `format` receives `{markdown,event,bot}`; `send` additionally receives
 `event` and the complete `formatted` result. Treat delivery metadata as private.
+
+Normalized sender profiles may include a stable opaque 64-hex participant `id` alongside the display name. The worker forwards only those fields to the brain; the profile grants no authenticated principal, role or permission.
