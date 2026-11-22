@@ -509,3 +509,6 @@ Persisted queue `maxAttempts` still controls dead-letter eligibility. Retry,
 time and message limits return failure explicitly. The time budget stops new
 attempts; in-flight work retains its configured timeout. This is not a daemon
 or scheduler and cannot recover after process or VM termination.
+
+
+Brain commands receive `AUX4BOT_SENDER`, a JSON object containing an optional `displayName` from the channel plugin. Names are bounded profile data, not authorization. Profile changes do not change conversation or dedupe IDs.
