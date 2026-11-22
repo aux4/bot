@@ -512,3 +512,13 @@ or scheduler and cannot recover after process or VM termination.
 
 
 Brain commands receive `AUX4BOT_SENDER`, a JSON object containing an optional `displayName` from the channel plugin. Names are bounded profile data, not authorization. Profile changes do not change conversation or dedupe IDs.
+
+## Retry-safe channel delivery
+
+A bot configured with `history: false` does not read or write the bot's
+conversation transcript; the brain owns canonical history. `sendIdempotent: true`
+is reserved for providers that deduplicate exact delivery retries. Its reply marker
+is written after confirmed provider acceptance, so a failed send remains retryable.
+Default provider behavior is unchanged. The brain also receives `AUX4BOT_EVENT_ID`.
+Provider `format` receives `{markdown,event,bot}`; `send` additionally receives
+`event` and the complete `formatted` result. Treat delivery metadata as private.
